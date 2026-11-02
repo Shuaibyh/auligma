@@ -5,7 +5,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { ArrowRight, Plus } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, Plus } from "lucide-react";
 import {
   Badge,
   EmptyState,
@@ -60,7 +60,7 @@ export function Assessments() {
                   {a.status}
                 </Badge>
                 <span>
-                  {a.mode} · {a.questionIds.length} preguntas
+                  {a.mode} · {a.questionIds.length} preguntas · {a.attemptPolicy.mode === "unlimited" ? "Intentos ilimitados" : `${a.attemptPolicy.maxAttempts} intentos`}
                 </span>
               </div>
               <h2>{a.title || "Borrador sin título"}</h2>
@@ -110,12 +110,17 @@ function AssessmentEditorContent() {
         mode: "Práctica",
         start: "",
         end: "",
-        attempts: 1,
+        attemptPolicy: { mode: "unlimited" },
         instructions: "",
         status: "Borrador",
       },
   );
   const [message, setMessage] = useState("");
+  const [lastMaxAttempts, setLastMaxAttempts] = useState(
+    existing?.attemptPolicy.mode === "limited"
+      ? existing.attemptPolicy.maxAttempts
+      : 1,
+  );
   if (id !== "nueva" && !existing)
     return (
       <EmptyState title="Evaluación no disponible">
@@ -133,6 +138,9 @@ function AssessmentEditorContent() {
     (locked
       ? item.snapshot
       : bank.filter((q) => item.questionIds.includes(q.id))) || [];
+  const availableQuestions = bank.filter(
+    (question) => question.classroomId === item.classroomId,
+  );
   function update(patch: Partial<Assessment>) {
     setMessage("");
     setAck(false);
@@ -212,6 +220,8 @@ function AssessmentEditorContent() {
             <label>
               Título
               <input
+                name="titulo"
+                autoComplete="off"
                 required
                 maxLength={100}
                 value={item.title}
@@ -223,8 +233,20 @@ function AssessmentEditorContent() {
               <label>
                 Aula
                 <select
+                  name="aula"
                   value={item.classroomId}
-                  onChange={(e) => update({ classroomId: e.target.value })}
+                  onChange={(e) =>
+                    update({
+                      classroomId: e.target.value,
+                      questionIds: item.questionIds.filter((questionId) =>
+                        bank.some(
+                          (question) =>
+                            question.id === questionId &&
+                            question.classroomId === e.target.value,
+                        ),
+                      ),
+                    })
+                  }
                 >
                   <option value="">Seleccionar aula</option>
                   {classrooms.map((c) => (
@@ -237,6 +259,7 @@ function AssessmentEditorContent() {
               <label>
                 Modalidad
                 <select
+                  name="modalidad"
                   value={item.mode}
                   onChange={(e) =>
                     update({ mode: e.target.value as Assessment["mode"] })
@@ -251,6 +274,7 @@ function AssessmentEditorContent() {
               <label>
                 Apertura
                 <input
+                  name="apertura"
                   type="datetime-local"
                   value={item.start}
                   onChange={(e) => update({ start: e.target.value })}
@@ -259,25 +283,70 @@ function AssessmentEditorContent() {
               <label>
                 Cierre
                 <input
+                  name="cierre"
                   type="datetime-local"
                   value={item.end}
                   onChange={(e) => update({ end: e.target.value })}
                 />
               </label>
             </div>
-            <label>
-              Intentos permitidos
-              <input
-                type="number"
-                min={1}
-                max={5}
-                value={item.attempts || ""}
-                onChange={(e) => update({ attempts: Number(e.target.value) })}
-              />
-            </label>
+            <fieldset className="attempt-policy">
+              <legend>Intentos permitidos</legend>
+              <label className={item.attemptPolicy.mode === "unlimited" ? "selected" : ""}>
+                <input
+                  type="radio"
+                  name="attempt-policy"
+                  checked={item.attemptPolicy.mode === "unlimited"}
+                  onChange={() => update({ attemptPolicy: { mode: "unlimited" } })}
+                />
+                <span><strong>Intentos ilimitados</strong><small>El estudiante puede reiniciar la práctica localmente.</small></span>
+              </label>
+              <label className={item.attemptPolicy.mode === "limited" ? "selected" : ""}>
+                <input
+                  type="radio"
+                  name="attempt-policy"
+                  checked={item.attemptPolicy.mode === "limited"}
+                  onChange={() =>
+                    update({
+                      attemptPolicy: {
+                        mode: "limited",
+                        maxAttempts: lastMaxAttempts,
+                      },
+                    })
+                  }
+                />
+                <span><strong>Número específico</strong><small>Define un máximo entero positivo.</small></span>
+              </label>
+              {item.attemptPolicy.mode === "limited" && (
+                <label>
+                  Máximo de intentos
+                  <input
+                    name="maximo-intentos"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    value={item.attemptPolicy.maxAttempts || ""}
+                    onChange={(e) =>
+                      {
+                        const value = Number(e.target.value);
+                        setLastMaxAttempts(value);
+                        update({
+                          attemptPolicy: {
+                            mode: "limited",
+                            maxAttempts: value,
+                          },
+                        });
+                      }
+                    }
+                  />
+                </label>
+              )}
+            </fieldset>
             <label>
               Reglas e instrucciones
               <textarea
+                name="instrucciones"
+                autoComplete="off"
                 rows={3}
                 value={item.instructions}
                 onChange={(e) => update({ instructions: e.target.value })}
@@ -303,7 +372,7 @@ function AssessmentEditorContent() {
                   <MathBlock formula={q.formula} />
                 </div>
               ))
-            : bank.map((q) => (
+            : availableQuestions.map((q) => (
                 <label className="question-choice" key={q.id}>
                   <input
                     type="checkbox"
@@ -327,6 +396,19 @@ function AssessmentEditorContent() {
                   </span>
                 </label>
               ))}
+          {!locked && item.classroomId && !availableQuestions.length && (
+            <EmptyState title="Todavía no tienes preguntas para esta aula">
+              <Link
+                className="button primary"
+                to={`/docente/banco/nueva?aula=${encodeURIComponent(item.classroomId)}`}
+              >
+                Crear primera pregunta
+              </Link>
+            </EmptyState>
+          )}
+          {!locked && !item.classroomId && (
+            <p className="notice">Selecciona un aula para ver su banco de preguntas.</p>
+          )}
           {!locked && (
             <div className="button-row">
               <button
@@ -355,18 +437,16 @@ function AssessmentEditorContent() {
             <>
               <p>La actividad conserva una copia de sus preguntas revisadas.</p>
               <p className="muted">
-                Fechas e intentos son configuración demostrativa: no se ejecutan
-                restricciones de acceso ni exámenes productivos.
+                Las fechas y el consumo de intentos siguen siendo demostrativos:
+                no existe un servicio que aplique restricciones institucionales.
               </p>
-              {item.mode === "Práctica" && (
-                <Link
-                  className="button primary"
-                  to={`/estudiante/practica?actividad=${item.id}`}
-                >
-                  Vista de práctica
-                  <ArrowRight size={16} />
-                </Link>
-              )}
+              <Link
+                className="button primary"
+                to={`/docente/evaluaciones/${item.id}/previsualizar`}
+              >
+                <Eye size={17} aria-hidden="true" />
+                Previsualizar como estudiante
+              </Link>
             </>
           ) : (
             <>
@@ -431,6 +511,69 @@ function AssessmentEditorContent() {
           </button>
         </div>
       </Modal>
+    </>
+  );
+}
+
+export function AssessmentPreview() {
+  const { id } = useParams();
+  const { assessments, bank, classrooms } = useDemo();
+  const item = assessments.find((assessment) => assessment.id === id);
+  if (!item)
+    return (
+      <EmptyState title="Vista previa no disponible">
+        <Link to="/docente/evaluaciones">Volver a evaluaciones</Link>
+      </EmptyState>
+    );
+  const questions =
+    item.snapshot ||
+    bank.filter(
+      (question) =>
+        question.classroomId === item.classroomId &&
+        item.questionIds.includes(question.id),
+    );
+  const classroom = classrooms.find(
+    (candidate) => candidate.id === item.classroomId,
+  );
+  return (
+    <>
+      <Link className="text-link" to={`/docente/evaluaciones/${item.id}`}>
+        <ArrowLeft size={16} aria-hidden="true" /> Volver al editor docente
+      </Link>
+      <PageHeading
+        eyebrow="VISTA PREVIA AISLADA / PERFIL DOCENTE"
+        title={item.title || "Evaluación sin título"}
+        description={`${classroom?.name || "Aula sin asignar"} · Esta vista no registra respuestas ni cambia al perfil Estudiante.`}
+      />
+      <div className="context-strip preview-context">
+        <strong>Previsualizando como estudiante</strong>
+        <span>Sigues en el espacio Docente. No se modifica el progreso estudiantil.</span>
+      </div>
+      {questions.length ? (
+        <div className="question-list preview-list">
+          {questions.map((question, index) => (
+            <article className="panel question-panel" key={question.id}>
+              <Badge>Pregunta {index + 1} de {questions.length}</Badge>
+              <h2>{question.text}</h2>
+              {question.formula && <MathBlock formula={question.formula} />}
+              <fieldset disabled>
+                <legend>Alternativas</legend>
+                {question.options.map((option, optionIndex) => (
+                  <label className="answer-option" key={optionIndex}>
+                    <input type="radio" name={`preview-${question.id}`} />
+                    <span className="answer-letter">{"ABCDEF"[optionIndex]}</span>
+                    <MathBlock formula={option} block={false} />
+                  </label>
+                ))}
+              </fieldset>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="Esta evaluación todavía no tiene preguntas">
+          Vuelve al editor y selecciona preguntas del aula.
+        </EmptyState>
+      )}
     </>
   );
 }

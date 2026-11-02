@@ -5,23 +5,57 @@ import {
   type Question,
   type Assessment,
 } from "./academic";
+import type { ProfessionalSchool } from "./catalogs";
+
+export type Student = {
+  id: string;
+  code?: string;
+  firstNames: string;
+  lastNames: string;
+  email?: string;
+};
+
+export function studentName(student: Student) {
+  return `${student.firstNames} ${student.lastNames}`.trim();
+}
+
 export type Classroom = {
   id: string;
   name: string;
   section: string;
   period: string;
   shift: string;
-  group: string;
-  students: string[];
-  studentGroups?: Record<string, string>;
+  students: Student[];
   color: string;
+  archivedAt?: string;
 };
+
+export type StudentProfile = {
+  firstNames: string;
+  lastNames: string;
+  email: string;
+  universityCode: string;
+  phone: string;
+  school: ProfessionalSchool;
+  photo?: string;
+};
+
+export type TeacherProfile = {
+  firstNames: string;
+  lastNames: string;
+  email: string;
+  phone: string;
+  professionalInfo: string;
+  photo?: string;
+};
+
 export type Review = {
   text: string;
   formula: string;
   status: number;
   loaded: boolean;
 };
+
 type DemoState = {
   bank: Question[];
   setBank: React.Dispatch<React.SetStateAction<Question[]>>;
@@ -35,8 +69,14 @@ type DemoState = {
   setReview: React.Dispatch<React.SetStateAction<Review>>;
   dark: boolean;
   toggleTheme: () => void;
+  studentProfile: StudentProfile;
+  setStudentProfile: React.Dispatch<React.SetStateAction<StudentProfile>>;
+  teacherProfile: TeacherProfile;
+  setTeacherProfile: React.Dispatch<React.SetStateAction<TeacherProfile>>;
 };
+
 const Context = createContext<DemoState | null>(null);
+
 export function DemoProvider({ children }: { children: ReactNode }) {
   const [bank, setBank] = useState(initialBank);
   const [assessments, setAssessments] = useState(initialAssessments);
@@ -48,11 +88,28 @@ export function DemoProvider({ children }: { children: ReactNode }) {
       section: "A",
       period: "2026-II",
       shift: "Mañana",
-      group: "Grupo 1",
       students: [
-        "Estudiante demo 01",
-        "Estudiante demo 02",
-        "Estudiante demo 03",
+        {
+          id: "demo-student",
+          code: "DEM-001",
+          firstNames: "Estudiante",
+          lastNames: "demo 01",
+          email: "estudiante.demo@auligma.test",
+        },
+        {
+          id: "demo-02",
+          code: "DEM-002",
+          firstNames: "Estudiante",
+          lastNames: "demo 02",
+          email: "demo02@example.invalid",
+        },
+        {
+          id: "demo-03",
+          code: "DEM-003",
+          firstNames: "Estudiante",
+          lastNames: "demo 03",
+          email: "demo03@example.invalid",
+        },
       ],
       color: "blue",
     },
@@ -62,7 +119,6 @@ export function DemoProvider({ children }: { children: ReactNode }) {
       section: "B",
       period: "2026-II",
       shift: "Tarde",
-      group: "",
       students: [],
       color: "green",
     },
@@ -72,7 +128,6 @@ export function DemoProvider({ children }: { children: ReactNode }) {
       section: "C",
       period: "2026-II",
       shift: "Mañana",
-      group: "",
       students: [],
       color: "sand",
     },
@@ -84,9 +139,26 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     loaded: false,
   });
   const [dark, setDark] = useState(false);
+  const [studentProfile, setStudentProfile] = useState<StudentProfile>({
+    firstNames: "Estudiante",
+    lastNames: "Demo",
+    email: "estudiante.demo@auligma.test",
+    universityCode: "DEM-EST-01",
+    phone: "",
+    school: "Ingeniería de Sistemas",
+  });
+  const [teacherProfile, setTeacherProfile] = useState<TeacherProfile>({
+    firstNames: "Docente",
+    lastNames: "Demo",
+    email: "docente.demo@auligma.test",
+    phone: "",
+    professionalInfo: "Docencia universitaria en matemáticas",
+  });
+
   function toggleTheme() {
     setDark((value) => !value);
   }
+
   return (
     <Context.Provider
       value={{
@@ -102,6 +174,10 @@ export function DemoProvider({ children }: { children: ReactNode }) {
         setReview,
         dark,
         toggleTheme,
+        studentProfile,
+        setStudentProfile,
+        teacherProfile,
+        setTeacherProfile,
       }}
     >
       <div data-theme={dark ? "dark" : "light"} className="theme-root">
@@ -110,6 +186,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     </Context.Provider>
   );
 }
+
 export function useDemo() {
   const value = useContext(Context);
   if (!value) throw new Error("Falta el contexto de demostración");

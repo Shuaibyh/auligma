@@ -1,5 +1,6 @@
 export type Question = {
   id: string;
+  classroomId: string;
   topic: string;
   text: string;
   formula: string;
@@ -11,11 +12,14 @@ export type Question = {
   errors: string[];
   recommendation: string;
 };
-// Ejemplos preparados: sus desarrollos se revisan manualmente, sin servicios de IA.
+
+// Ejemplos preparados y ligados explícitamente al aula de Cálculo diferencial.
+// Sus soluciones fueron revisadas manualmente y no proceden de un servicio de IA.
 export const preparedQuestions: Question[] = [
   {
-    id: "derivada",
-    topic: "Derivadas",
+    id: "derivada-polinomio",
+    classroomId: "calculo",
+    topic: "Derivadas de polinomios",
     text: "¿Cuál es la derivada de esta función?",
     formula: "f(x)=x^3-3x+2",
     options: ["3x^2-3", "3x^2+2", "x^2-3", "3x-3"],
@@ -29,68 +33,71 @@ export const preparedQuestions: Question[] = [
     ],
     errors: [
       "",
-      "La constante 2 no permanece al derivar: su derivada es 0. Además, la derivada de −3x es −3.",
+      "La constante 2 no permanece al derivar: su derivada es 0.",
       "Al derivar x³ debes multiplicar por el exponente 3.",
       "El exponente de x³ se reduce a 2, no a 1.",
     ],
-    recommendation:
-      "Practica la regla de la potencia por separado antes de combinar términos.",
+    recommendation: "Practica la regla de la potencia antes de combinar términos.",
   },
   {
-    id: "limite",
-    topic: "Límites",
-    text: "Calcula el siguiente límite.",
-    formula: "\\lim_{x \\to 2}(x^2+1)",
-    options: ["3", "4", "5", "6"],
+    id: "derivada-en-punto",
+    classroomId: "calculo",
+    topic: "Derivada en un punto",
+    text: "Calcula f′(2) para la función indicada.",
+    formula: "f(x)=x^2+1",
+    options: ["2", "3", "4", "5"],
     correct: 2,
     state: "Revisada",
-    rule: "Continuidad de los polinomios: el límite coincide con el valor de la función.",
+    rule: "Primero deriva la función y luego evalúa la derivada en el punto.",
     steps: [
-      "El polinomio x² + 1 es continuo en x = 2.",
-      "Sustituye x por 2 y calcula el cuadrado: 2² = 4.",
-      "Suma la constante: 4 + 1 = 5.",
+      "Deriva x² + 1 mediante la regla de la potencia: f′(x) = 2x.",
+      "Sustituye x por 2 en la expresión de la derivada.",
+      "Calcula 2·2 = 4; por tanto, f′(2) = 4.",
     ],
     errors: [
-      "Elevar al cuadrado significa multiplicar 2 por 2, no conservar el 2.",
-      "Después de calcular 2² = 4 falta sumar 1.",
+      "Has evaluado sin aplicar correctamente la derivada de x².",
+      "La constante desaparece, pero todavía debes evaluar 2x en x = 2.",
       "",
-      "Revisa la suma final: 2² + 1 es 4 + 1, no 4 + 2.",
+      "5 es f(2), no f′(2). El ejercicio pide el valor de la derivada.",
     ],
-    recommendation:
-      "Repasa la sustitución directa y el orden de las operaciones.",
+    recommendation: "Distingue entre evaluar la función y evaluar su derivada.",
   },
   {
-    id: "integral",
-    topic: "Integrales",
-    text: "Encuentra una primitiva de la función.",
-    formula: "\\int 2x\\,dx",
-    options: ["2x^2+C", "x^2+C", "2+C", "x+C"],
+    id: "regla-cadena",
+    classroomId: "calculo",
+    topic: "Regla de la cadena",
+    text: "Deriva la siguiente función compuesta.",
+    formula: "g(x)=(2x+1)^3",
+    options: ["3(2x+1)^2", "6(2x+1)^2", "6(2x+1)^3", "2(2x+1)^2"],
     correct: 1,
     state: "Revisada",
-    rule: "Regla de integración de potencias: ∫xⁿ dx = xⁿ⁺¹/(n + 1) + C, para n ≠ −1.",
+    rule: "Regla de la cadena: deriva la función exterior y multiplica por la derivada de la interior.",
     steps: [
-      "Escribe 2x como 2·x¹ y conserva el factor 2.",
-      "Aumenta el exponente a 2 y divide entre 2: 2·x²/2 = x².",
-      "Añade C. Comprueba derivando x² + C: obtienes 2x.",
+      "Deriva la potencia exterior: 3(2x + 1)².",
+      "Deriva la función interior 2x + 1: su derivada es 2.",
+      "Multiplica ambos factores: g′(x) = 6(2x + 1)².",
     ],
     errors: [
-      "Al aumentar el exponente debes dividir por 2; el factor inicial se cancela.",
+      "Falta multiplicar por la derivada de la función interior, que es 2.",
       "",
-      "Has derivado en lugar de integrar. La integral debe ser una función cuya derivada sea 2x.",
-      "La derivada de x + C es 1, no 2x. Debes aumentar el exponente.",
+      "Al derivar una potencia, el exponente se reduce en una unidad.",
+      "Debes incluir también el factor 3 de la potencia exterior.",
     ],
-    recommendation: "Comprueba tus primitivas derivando el resultado.",
+    recommendation: "Separa la función exterior de la interior antes de derivar.",
   },
 ];
-export const initialBank: Question[] = [
-  ...preparedQuestions,
-  {
-    ...preparedQuestions[0],
-    id: "derivada-revision",
-    text: "Revisa el procedimiento de una derivada polinómica.",
-    state: "Pendiente de revisión",
-  },
-];
+
+export const initialBank: Question[] = preparedQuestions.map((question) => ({
+  ...question,
+  options: [...question.options],
+  steps: [...question.steps],
+  errors: [...question.errors],
+}));
+
+export type AttemptPolicy =
+  | { mode: "unlimited" }
+  | { mode: "limited"; maxAttempts: number };
+
 export type Assessment = {
   id: string;
   title: string;
@@ -99,11 +106,12 @@ export type Assessment = {
   mode: "Práctica" | "Evaluación";
   start: string;
   end: string;
-  attempts: number;
+  attemptPolicy: AttemptPolicy;
   instructions: string;
   status: "Borrador" | "Pendiente de revisión" | "Publicada";
   snapshot?: Question[];
 };
+
 export const initialAssessments: Assessment[] = [
   {
     id: "repaso",
@@ -113,7 +121,7 @@ export const initialAssessments: Assessment[] = [
     mode: "Práctica",
     start: "2026-10-01T08:00",
     end: "2026-12-31T23:59",
-    attempts: 1,
+    attemptPolicy: { mode: "unlimited" },
     instructions:
       "Resuelve a tu ritmo y consulta cada explicación después de comprobar la respuesta.",
     status: "Publicada",
@@ -123,27 +131,28 @@ export const initialAssessments: Assessment[] = [
     id: "control",
     title: "Control de derivadas",
     classroomId: "calculo",
-    questionIds: ["derivada-revision"],
+    questionIds: ["regla-cadena"],
     mode: "Evaluación",
     start: "",
     end: "",
-    attempts: 1,
+    attemptPolicy: { mode: "limited", maxAttempts: 1 },
     instructions: "Revisa el procedimiento antes de enviar.",
     status: "Borrador",
   },
   {
-    id: "repaso-limites",
-    title: "Repaso de límites",
+    id: "repaso-cadena",
+    title: "Repaso de regla de la cadena",
     classroomId: "calculo",
-    questionIds: ["limite"],
+    questionIds: ["regla-cadena"],
     mode: "Práctica",
     start: "2026-10-01T08:00",
     end: "2026-12-31T23:59",
-    attempts: 1,
-    instructions: "Utiliza la sustitución directa y comprueba el resultado.",
+    attemptPolicy: { mode: "limited", maxAttempts: 3 },
+    instructions: "Identifica la función interior antes de derivar.",
     status: "Pendiente de revisión",
   },
 ];
+
 export function publicationIssues(
   item: Assessment,
   bank: Question[],
@@ -157,10 +166,16 @@ export function publicationIssues(
     issues.push("Selecciona al menos una pregunta.");
   if (
     item.questionIds.some(
-      (id) => !bank.some((q) => q.id === id && q.state === "Revisada"),
+      (id) =>
+        !bank.some(
+          (q) =>
+            q.id === id &&
+            q.classroomId === item.classroomId &&
+            q.state === "Revisada",
+        ),
     )
   )
-    issues.push("Revisa todas las preguntas seleccionadas en el banco.");
+    issues.push("Revisa las preguntas y comprueba que pertenezcan al aula.");
   if (
     !item.start ||
     !item.end ||
@@ -171,11 +186,11 @@ export function publicationIssues(
   else if (Date.parse(item.end) <= Date.parse(item.start))
     issues.push("El cierre debe ser posterior a la apertura.");
   if (
-    !Number.isInteger(item.attempts) ||
-    item.attempts < 1 ||
-    item.attempts > 5
+    item.attemptPolicy.mode === "limited" &&
+    (!Number.isInteger(item.attemptPolicy.maxAttempts) ||
+      item.attemptPolicy.maxAttempts < 1)
   )
-    issues.push("Configura entre 1 y 5 intentos.");
+    issues.push("Configura un número entero positivo de intentos.");
   if (!item.instructions.trim())
     issues.push("Describe las reglas de la actividad.");
   return issues;

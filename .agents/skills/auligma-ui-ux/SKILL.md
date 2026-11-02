@@ -16,7 +16,7 @@ Construir una experiencia universitaria moderna, sobria, memorable, accesible, c
 5. Priorizar jerarquía visual, tipografía y espaciado antes de animaciones o decoraciones.
 
 ## Sistema visual obligatorio
-- Interfaz en español claro, con terminología consistente entre aula, asignatura, sección, grupo y evaluación.
+- Interfaz en español claro, con terminología consistente entre aula, asignatura, sección, semestre, turno y evaluación.
 - Usar tokens semánticos para color, escala tipográfica, spacing, elevación y radios; no colores hexadecimales repetidos en componentes.
 - Elegir tipografías licenciadas y disponibles, con alternativas de sistema; fórmulas matemáticas con KaTeX (no imitar matemáticas con texto plano).
 - Base de texto 16 px; texto secundario 14 px; textos pequeños 12 px solo en metadatos de baja prioridad; títulos desde 24–36 px según contexto.
@@ -27,7 +27,7 @@ Construir una experiencia universitaria moderna, sobria, memorable, accesible, c
 
 ## Componentes y flujos prioritarios
 1. Inicio docente: aulas, resumen de actividad, pendientes de revisión, llamadas a la acción claras.
-2. Creación de aula: curso, semestre, sección, turno, grupos opcionales.
+2. Creación de aula: asignatura, semestre, sección y turno.
 3. Importación de participantes: mapa de columnas, vista previa de filas, roles dudosos para revisión, duplicados, confirmación explícita.
 4. Conversión de PDF: vista del documento junto al ejercicio interpretado, confianza/observaciones y corrección manual; no publicación automática.
 5. Editor de evaluación: distractores, respuesta validada, explicación paso a paso, estados de revisión y publicación.

@@ -112,12 +112,14 @@ export function Modal({
   title,
   description,
   children,
+  contentClassName = "",
 }: {
   open: boolean;
   onOpenChange: (value: boolean) => void;
   title: string;
   description: string;
   children: ReactNode;
+  contentClassName?: string;
 }) {
   const { dark } = useDemo();
   return (
@@ -126,7 +128,7 @@ export function Modal({
         <Dialog.Overlay className="modal-overlay" />
         <Dialog.Content
           data-theme={dark ? "dark" : "light"}
-          className="modal-content"
+          className={`modal-content ${contentClassName}`.trim()}
         >
           <Dialog.Title>{title}</Dialog.Title>
           <Dialog.Description className="muted">

@@ -1,11 +1,13 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import {
   Link,
   NavLink,
   Outlet,
+  Navigate,
   Route,
   Routes,
   useLocation,
+  useNavigate,
 } from "react-router-dom";
 import {
   BookOpen,
@@ -20,13 +22,13 @@ import {
   Settings2,
   ChartNoAxesCombined,
   CircleHelp,
+  UserRound,
 } from "lucide-react";
 import {
   Logo,
   ThemeButton,
   Badge,
   PageHeading,
-  RouteCard,
 } from "./components/ui";
 import { useDemo } from "./state/DemoContext";
 import { Dashboard, Classrooms, ClassroomDetail } from "./pages/Teacher";
@@ -45,15 +47,22 @@ function ReviewDocument() {
 }
 import { StudentHome, Practice, Progress } from "./pages/Student";
 import { QuestionBank, QuestionDetail } from "./pages/QuestionBank";
-import { Assessments, AssessmentEditor } from "./pages/Assessments";
+import {
+  Assessments,
+  AssessmentEditor,
+  AssessmentPreview,
+} from "./pages/Assessments";
+import { Profile } from "./pages/Profile";
+import { Login } from "./pages/Login";
+import { roleHome, useAuth, type DemoRole } from "./auth/demoAuth";
 
-function Welcome() {
+export function Welcome() {
   return (
     <div className="welcome">
       <header className="welcome-header">
         <Logo />
         <div className="flex items-center gap-3">
-          <Badge>Prototipo · Fase 1</Badge>
+          <Badge>Prototipo · Fase 1.2</Badge>
           <ThemeButton />
         </div>
       </header>
@@ -211,6 +220,7 @@ const teacherLinks = [
   { to: "/docente/banco", text: "Banco de preguntas", icon: Layers3 },
   { to: "/docente/evaluaciones", text: "Evaluaciones", icon: FileCheck2 },
   { to: "/docente/informes", text: "Informes", icon: ChartNoAxesCombined },
+  { to: "/docente/perfil", text: "Mi perfil", icon: UserRound },
 ];
 const studentLinks = [
   { to: "/estudiante", text: "Mis actividades", icon: BookOpen },
@@ -221,9 +231,12 @@ const studentLinks = [
     icon: ChartNoAxesCombined,
   },
   { to: "/estudiante/ayuda", text: "Ayuda", icon: CircleHelp },
+  { to: "/estudiante/perfil", text: "Mi perfil", icon: UserRound },
 ];
 function Shell({ student = false }: { student?: boolean }) {
-  const { concentration } = useDemo();
+  const { concentration, studentProfile, teacherProfile } = useDemo();
+  const { logout } = useAuth();
+  const navigate = useNavigate();
   const links = student ? studentLinks : teacherLinks;
   const location = useLocation();
   const current =
@@ -232,6 +245,7 @@ function Shell({ student = false }: { student?: boolean }) {
     )?.text ?? "Espacio de trabajo";
   return (
     <div
+      data-profile={student ? "estudiante" : "docente"}
       className={`app-shell ${student ? "student-shell" : ""} ${student && concentration && location.pathname === "/estudiante/practica" ? "concentration" : ""}`}
     >
       <a href="#contenido" className="skip-link">
@@ -262,13 +276,13 @@ function Shell({ student = false }: { student?: boolean }) {
               <Settings2 size={18} /> Ajustes
             </NavLink>
           )}
-          <Link to="/" className="utility-link">
-            <LogOut size={18} /> Cambiar de perfil
-          </Link>
+          <button className="utility-link logout-button" onClick={() => { logout(); navigate("/login", { replace: true }); }}>
+            <LogOut size={18} aria-hidden="true" /> Cerrar sesión
+          </button>
           <div className="profile">
-            <span className="avatar">{student ? "ED" : "DD"}</span>
+            <span className="avatar">{student ? `${studentProfile.firstNames.at(0)}${studentProfile.lastNames.at(0)}` : `${teacherProfile.firstNames.at(0)}${teacherProfile.lastNames.at(0)}`}</span>
             <div>
-              <strong>{student ? "Estudiante demo" : "Docente demo"}</strong>
+              <strong>{student ? `${studentProfile.firstNames} ${studentProfile.lastNames}` : `${teacherProfile.firstNames} ${teacherProfile.lastNames}`}</strong>
               <small>Cuenta de demostración</small>
             </div>
           </div>
@@ -287,7 +301,9 @@ function Shell({ student = false }: { student?: boolean }) {
           </div>
         </header>
         <main id="contenido" tabIndex={-1} className="main-content">
-          <Outlet />
+          <div className="route-transition" key={location.key}>
+            <Outlet />
+          </div>
         </main>
         <footer className="app-footer">
           <span>AULIGMA · Datos sintéticos</span>
@@ -363,17 +379,36 @@ function RouteFocus() {
         ? "Aprendizaje"
         : pathname.startsWith("/docente")
           ? "Espacio docente"
-          : "Geometría razonada");
+          : pathname === "/login" ? "Iniciar sesión" : "Geometría razonada");
   }, [pathname]);
   return null;
 }
+function RequireRole({ role, children }: { role: DemoRole; children: ReactNode }) {
+  const { currentUser } = useAuth();
+  const location = useLocation();
+  if (!currentUser) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  if (currentUser.role !== role) return <Navigate to={roleHome(currentUser.role)} replace />;
+  return children;
+}
+
+function EntryRoute() {
+  const { currentUser } = useAuth();
+  return <Navigate to={currentUser ? roleHome(currentUser.role) : "/login"} replace />;
+}
+
+function LoginRoute() {
+  const { currentUser } = useAuth();
+  return currentUser ? <Navigate to={roleHome(currentUser.role)} replace /> : <Login />;
+}
+
 export function App() {
   return (
     <>
       <RouteFocus />
       <Routes>
-        <Route path="/" element={<Welcome />} />
-        <Route path="/docente" element={<Shell />}>
+        <Route path="/" element={<EntryRoute />} />
+        <Route path="/login" element={<LoginRoute />} />
+        <Route path="/docente" element={<RequireRole role="docente"><Shell /></RequireRole>}>
           <Route index element={<Dashboard />} />
           <Route path="aulas" element={<Classrooms />} />
           <Route path="aulas/:id" element={<ClassroomDetail />} />
@@ -382,6 +417,10 @@ export function App() {
           <Route path="banco" element={<QuestionBank />} />
           <Route path="banco/:id" element={<QuestionDetail />} />
           <Route path="evaluaciones" element={<Assessments />} />
+          <Route
+            path="evaluaciones/:id/previsualizar"
+            element={<AssessmentPreview />}
+          />
           <Route path="evaluaciones/:id" element={<AssessmentEditor />} />
           <Route
             path="informes"
@@ -397,27 +436,18 @@ export function App() {
             }
           />
           <Route path="ajustes" element={<Settings />} />
+          <Route path="perfil" element={<Profile />} />
         </Route>
-        <Route path="/estudiante" element={<Shell student />}>
+        <Route path="/estudiante" element={<RequireRole role="estudiante"><Shell student /></RequireRole>}>
           <Route index element={<StudentHome />} />
           <Route path="practica" element={<Practice />} />
           <Route path="progreso" element={<Progress />} />
           <Route path="ayuda" element={<Help />} />
+          <Route path="perfil" element={<Profile student />} />
         </Route>
         <Route
           path="*"
-          element={
-            <div className="main-content">
-              <PageHeading
-                eyebrow="404"
-                title="Este camino no existe"
-                description="Vuelve a uno de los espacios de AULIGMA."
-              />
-              <RouteCard to="/" title="Volver a la bienvenida">
-                Elegir un perfil de demostración
-              </RouteCard>
-            </div>
-          }
+          element={<EntryRoute />}
         />
       </Routes>
     </>
