@@ -4,8 +4,8 @@
 
 - Bienvenida editorial con construcción geométrica original, marca provisional y elección de perfil simulado.
 - Inicio docente con aulas, tareas de revisión y accesos a los flujos principales.
-- Aulas: búsqueda, creación mediante diálogo Radix, validación, sección, periodo, turno y grupo inicial opcional. Vista vacía y listado de participantes.
-- Importación: selección de muestra o nombre de Excel, estado de carga, mapeo de columnas, grupos opcionales, detección de duplicados e incompletos, confirmación explícita e incorporación local de filas válidas. Reimportar evita duplicar los participantes existentes de la muestra.
+- Aulas: búsqueda, creación mediante diálogo Radix, validación, sección, periodo y turno. Vista vacía y listado de participantes.
+- Importación: el prototipo inicial solo utilizó una muestra; Fase 1.2 lo sustituyó por lectura local de `.xlsx`/`.csv`, revisión de roles e incorporación de filas seleccionadas.
 - Revisión: documento sintético junto a transcripción editable, vista matemática, control de sintaxis LaTeX y margen Extraído → Verificado → Aprobado. Todos los estados son simulados. Editar reinicia la revisión y aprobar requiere confirmación.
 - Portal estudiantil independiente: actividad, tres preguntas, respuestas, navegación con parámetro de URL, explicaciones preparadas, progreso y reinicio.
 - Banco de preguntas, evaluaciones, informes, ayuda y ajustes: pantallas navegables con contenido demostrativo. No constituyen editores ni informes productivos.

@@ -7,11 +7,11 @@ Se conserva React, TypeScript, Vite, Tailwind, React Router, Radix Dialog, Lucid
 ## Espacio docente
 
 - Dashboard: aulas en primer plano, retirada de la ilustración dominante y de frases repetidas, pendientes de preguntas/evaluaciones y accesos directos al trabajo académico.
-- Aulas: metadatos de sección, semestre, turno y grupos más legibles. El detalle enlaza al banco y a evaluaciones manteniendo el aula de destino en la URL. Se conserva el importador de Moodle simulado.
+- Aulas: metadatos de sección, semestre y turno más legibles. El detalle enlaza al banco y a evaluaciones manteniendo el aula de destino en la URL. El importador de esta entrega fue sustituido por la lectura local documentada en Fase 1.2.
 - Banco: listado de cuatro preguntas sintéticas; búsqueda y filtros de tema/estado sincronizados con la URL; estado vacío recuperable. Detalle y edición de enunciado, fórmula, alternativas, respuesta, regla, pasos, explicaciones de error y recomendación.
 - Revisión: editar invalida el estado Revisada. Para recuperarlo se exige reconocimiento explícito de revisión manual, campos completos, alternativas distintas y sintaxis LaTeX válida. Esta comprobación sintáctica no valida el razonamiento matemático.
 - Evaluaciones: listado propio, creación, título, aula, modalidad, preguntas, apertura/cierre, intentos e instrucciones. Los cambios se conservan en memoria al navegar. Estados Borrador → Pendiente de revisión → Publicada.
-- Publicación: requiere título, aula existente, preguntas revisadas, fechas completas con cierre posterior, entre uno y cinco intentos, reglas y confirmación. Cada publicación conserva una copia de las preguntas para aislarla de ediciones posteriores.
+- Publicación: requiere título, aula existente, preguntas revisadas, fechas completas con cierre posterior, reglas y confirmación. Fase 1.2 añadió intentos ilimitados o un máximo positivo. Cada publicación conserva una copia de las preguntas para aislarla de ediciones posteriores.
 
 ## Espacio estudiante
 

@@ -8,7 +8,7 @@
 
 **Personalidad:** académico serio + producto tecnológico contemporáneo. Sobrio, elegante, amable, muy legible. Evitar estética infantil, glows masivos, gradientes exagerados y dashboards saturados.
 
-**Públicos:** docentes universitarios, estudiantes con acceso individual y administrador. Objetivos principales: ahorrar tiempo al preparar actividades, facilitar la práctica matemática y ofrecer datos pedagógicos útiles.
+**Públicos:** docentes universitarios y estudiantes con acceso individual. Objetivos principales: ahorrar tiempo al preparar actividades, facilitar la práctica matemática y ofrecer datos pedagógicos útiles.
 
 **Principio rector:** primero claridad y confianza; después atractivo visual. La experiencia debería sentirse de nivel producto, no de plantilla genérica.
 
@@ -61,21 +61,18 @@ Tokens centralizados en `src/styles.css`. El primario oscuro usa tinta oscura co
 ### Docente
 `Inicio · Mis aulas · Banco de preguntas · Evaluaciones · Informes · Ajustes`
 
-En una aula: `Resumen · Estudiantes · Grupos (opcional) · Materiales · Evaluaciones · Resultados`
+En una aula: `Resumen · Estudiantes · Materiales · Evaluaciones · Resultados`
 
 ### Estudiante
 `Mis actividades · Practicar · Mi progreso · Ayuda`
 
 No mostrar a estudiantes páginas de docentes ni información individual de compañeros.
 
-### Administrador
-`Solicitudes docentes · Asignaturas · Seguridad y configuración`
-
 ## 4. Pantallas críticas a diseñar ANTES del backend completo
 
 1. **Dashboard docente**: resumen realista sin cifras inventadas; pendientes y acción principal "Crear aula".
 2. **Crear aula**: asignatura / periodo / sección / turno / reglas; creación en pocos pasos.
-3. **Importador Excel Moodle**: archivo -> vista previa -> mapeo columnas -> detección de inconsistencias -> confirmación. Sin filtrar exclusivamente por grupo.
+3. **Importador Excel Moodle**: archivo -> revisión de estudiantes -> confirmación. Detectar encabezados y roles automáticamente; mostrar la correspondencia de columnas solo cuando requiera corrección.
 4. **Procesar PDF**: documento original a la izquierda; ejercicios identificados y transcripción editable a la derecha (diseño apilado en móvil).
 5. **Editor de evaluación**: alternativas, indicador de verificación matemática, distractores, explicación y aprobación del docente.
 6. **Portal estudiante**: acceso personal, lista de actividades con estado y fecha.
@@ -119,3 +116,9 @@ Solo diseñar el sistema de diseño, UI kit y prototipos navegables de los cuatr
 ## 9. Refinamiento de Fase 1.1
 
 Se conserva la identidad aprobada. El dashboard prioriza aulas y pendientes, y reduce ilustraciones y frases ornamentales. Banco y evaluaciones tienen flujos propios, conectados desde el aula. La práctica dispone de modo concentración, explicaciones preparadas paso a paso y conservación local de respuestas por pestaña. La tipografía funcional secundaria se ajusta a 14 px; los metadatos pueden usar 12 px. Los ajustes están en `src/refinements.css`, sobre los tokens originales. Alcance y verificación: `docs/FASE_1_1.md` (rutas desde la raíz).
+
+## 10. Correcciones de Fase 1.2
+
+El alcance vigente conserva exclusivamente Docente y Estudiante. Las aulas usan asignatura, periodo, sección y turno. La matrícula admite alta manual y lectura local de `.xlsx`/`.csv`; los casos ambiguos requieren confirmación. El banco pertenece explícitamente a cada aula y las evaluaciones no pueden mezclar preguntas de aulas distintas. La vista previa estudiantil permanece dentro del shell Docente. El movimiento funcional usa 140–240 ms, `opacity`/`transform` y respeta `prefers-reduced-motion`. Alcance y verificación: `docs/FASE_1_2.md`.
+
+El acceso de demostración sustituye la elección directa de perfil por un formulario editorial de Usuario y Contraseña. Conserva la construcción geométrica y comunica su carácter temporal mediante una nota secundaria. Las credenciales no aparecen en la interfaz. Google solo muestra un estado accesible de indisponibilidad, sin OAuth, redirección ni sesión. La sesión local nunca debe confundirse con autenticación institucional.

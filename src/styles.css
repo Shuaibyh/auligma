@@ -135,9 +135,6 @@ strong {
   outline: 3px solid var(--focus);
   outline-offset: 4px;
 }
-main:focus {
-  outline: none;
-}
 input,
 textarea,
 select {
@@ -206,9 +203,7 @@ small {
   font-size: 13px;
   font-weight: 700;
   border: 1px solid transparent;
-  transition:
-    transform 160ms,
-    background-color 160ms;
+  transition: transform 160ms;
   line-height: 1.4;
 }
 .button:hover:not(:disabled) {
@@ -1359,15 +1354,24 @@ progress::-moz-progress-bar {
 }
 .skip-link {
   position: fixed;
-  top: -100px;
+  top: 10px;
   left: 20px;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
   background: var(--primary);
   color: var(--on-primary);
-  padding: 12px;
   z-index: 100;
 }
-.skip-link:focus {
-  top: 10px;
+.skip-link:focus-visible {
+  width: auto;
+  height: auto;
+  padding: 12px;
+  overflow: visible;
+  clip-path: none;
 }
 .main-content {
   animation: appear 260ms ease-out;

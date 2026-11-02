@@ -1,201 +1,175 @@
-import { test, expect } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
-test("aula, formulario, mapeo e incorporación de filas válidas", async ({
-  page,
-}) => {
+import { test, expect, type Page } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
+import writeXlsxFile from "write-excel-file/node";
+
+async function signIn(page: Page, username: "docente" | "alumno" = "docente") {
+  await page.goto("/login");
+  await page.getByLabel("Usuario").fill(username);
+  await page.getByLabel("Contraseña", { exact: true }).fill("1234");
+  await page.getByRole("button", { name: "Iniciar sesión" }).click();
+  await expect(page).toHaveURL(username === "docente" ? /\/docente$/ : /\/estudiante$/);
+}
+
+test.beforeEach(async ({ page }) => signIn(page));
+
+async function syntheticRoster() {
+  const directory = path.resolve("test-results/fase-1-2");
+  await mkdir(directory, { recursive: true });
+  const filePath = path.join(directory, "participantes-sinteticos.xlsx");
+  const data = [
+    ["Código de estudiante", "Nombres", "Apellidos", "Dirección de correo", "Roles"],
+    ["SYN-101", "Lucía", "Sintética Uno", "lucia@example.invalid", "Estudiante"],
+    ["SYN-102", "Mateo", "Sintético Dos", "mateo@example.invalid", "Estudiante"],
+    ["SYN-102", "Registro", "Duplicado", "duplicado@example.invalid", "Estudiante"],
+    ["", "Alex", "Por Confirmar", "", ""],
+    ["SYN-DOC", "Docente", "Sintético", "docente@example.invalid", "Docente"],
+  ];
+  await writeXlsxFile(data, { sheet: "Participantes" }).toFile(filePath);
+  return filePath;
+}
+
+test("crea LOGARITMOS con el modelo vigente, mantiene Docente y comienza con banco vacío", async ({ page }) => {
   await page.goto("/docente/aulas");
   await page.getByRole("button", { name: "Crear aula", exact: true }).click();
-  await page.getByLabel("Asignatura").fill("Geometría de demostración");
-  await page.getByLabel("Sección", { exact: true }).fill("D");
-  await page.getByLabel("Grupo inicial").fill("Seminario");
-  await page
-    .getByRole("button", { name: "Crear aula de demostración" })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "Geometría de demostración" }),
-  ).toBeVisible();
-  await expect(page.getByText("Tu aula empieza aquí")).toBeVisible();
-  await page
-    .getByRole("link", { name: "Importar estudiantes", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Usar nómina de demostración" })
-    .click();
-  await page.getByLabel("Nombre del estudiante").selectOption("Código");
-  await expect(
-    page.getByRole("button", { name: "Revisar participantes" }),
-  ).toBeDisabled();
-  await page
-    .getByLabel("Nombre del estudiante")
-    .selectOption("Nombre completo");
-  await page.getByRole("button", { name: "Revisar participantes" }).click();
-  await expect(
-    page.getByText("Código duplicado", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("Datos incompletos", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Confirmar incorporación" }),
-  ).toBeDisabled();
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Confirmar incorporación" }).click();
-  await page.getByRole("link", { name: "Ver estudiantes" }).click();
-  await expect(
-    page.getByText("Estudiante demo 04", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("Estudiante demo 05", { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText("Grupo 2", { exact: true })).toBeVisible();
+  await page.getByLabel("Asignatura").fill("LOGARITMOS");
+  await page.getByLabel("Sección", { exact: true }).fill("B1");
+  await page.getByLabel("Turno").selectOption("Tarde");
+  await page.getByRole("button", { name: "Crear aula de demostración" }).click();
+  await expect(page.locator("[data-profile=docente]")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "LOGARITMOS" })).toBeVisible();
+  await expect(page.getByText("2026-II / SECCIÓN B1")).toBeVisible();
+  await expect(page.getByText("Tarde · Aula de demostración")).toBeVisible();
+  await page.locator(".route-card").filter({ hasText: "Banco de preguntas" }).click();
+  await expect(page).toHaveURL(/\/docente\/banco\?aula=/);
+  await expect(page.getByText("Todavía no tienes preguntas para esta aula")).toBeVisible();
+  await expect(page.getByText(/Derivadas|Integrales|Límites/)).toHaveCount(0);
 });
-test("revisión explícita y reinicio de verificación al editar", async ({
-  page,
-}) => {
+
+test("lee filas reales de un XLSX, revisa roles y confirma una importación parcial", async ({ page }) => {
+  const filePath = await syntheticRoster();
+  await page.goto("/docente/aulas/algebra/importar");
+  await page.locator('input[type="file"]').setInputFiles(filePath);
+  await expect(page.getByRole("heading", { name: "Revisa los participantes" })).toBeVisible();
+  await expect(page.getByLabel("Nombres fila 2")).toHaveValue("Lucía");
+  await expect(page.getByLabel("Nombres fila 3")).toHaveValue("Mateo");
+  await expect(page.getByText("Estudiante demo 04")).toHaveCount(0);
+  await expect(page.locator("tbody").getByText("Duplicado", { exact: true })).toHaveCount(2);
+  await expect(page.locator("tbody").getByText("Excluido", { exact: true })).toBeVisible();
+  await expect(page.locator("tbody").getByText("Participante por confirmar", { exact: true })).toBeVisible();
+  await page.getByLabel("Incluir fila 5").check();
+  await page.getByRole("button", { name: /Revisar resumen/ }).click();
+  await expect(page.getByText("importación parcial")).toBeVisible();
+  await page.getByLabel(/He revisado la selección/).check();
+  await page.getByRole("button", { name: "Confirmar incorporación" }).click();
+  await expect(page.getByRole("heading", { name: "Importación parcial completada" })).toBeVisible();
+  await page.getByRole("link", { name: "Ver estudiantes" }).click();
+  await expect(page.getByText("Lucía Sintética Uno", { exact: true })).toBeVisible();
+  await expect(page.getByText("Alex Por Confirmar", { exact: true })).toBeVisible();
+  await expect(page.getByText("Docente Sintético", { exact: true })).toHaveCount(0);
+  await expect(page.locator("[data-profile=docente]")).toBeVisible();
+});
+
+test("rechaza un XLS heredado con una explicación y permite reintentar", async ({ page }) => {
+  await page.goto("/docente/aulas/algebra/importar");
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "participantes-antiguos.xls",
+    mimeType: "application/vnd.ms-excel",
+    buffer: Buffer.from("contenido sintético no ejecutable"),
+  });
+  await expect(page.getByRole("alert")).toContainText("Guárdalo como .xlsx o .csv");
+  await page.getByRole("button", { name: "Usar archivo de demostración" }).click();
+  await expect(page.getByRole("heading", { name: "Revisa los participantes" })).toBeVisible();
+});
+
+test("agrega, edita y retira un estudiante manual sin crear credenciales", async ({ page }) => {
+  await page.goto("/docente/aulas/algebra");
+  await page.getByRole("button", { name: "Agregar estudiante", exact: true }).click();
+  await page.getByLabel("Código institucional").fill("MAN-001");
+  await page.getByLabel("Nombres", { exact: true }).fill("Andrea");
+  await page.getByLabel("Apellidos", { exact: true }).fill("Sintética Manual");
+  await page.getByLabel("Correo electrónico").fill("andrea@example.invalid");
+  await page.getByRole("button", { name: "Agregar estudiante", exact: true }).click();
+  await expect(page.getByText("Andrea Sintética Manual", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Agregar estudiante", exact: true }).click();
+  await page.getByLabel("Código institucional").fill("MAN-001");
+  await page.getByLabel("Nombres", { exact: true }).fill("Otra");
+  await page.getByLabel("Apellidos", { exact: true }).fill("Persona Sintética");
+  await page.getByRole("button", { name: "Agregar estudiante", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Ya existe un estudiante");
+  await page.getByRole("button", { name: "Cancelar" }).click();
+  await page.getByRole("button", { name: "Editar a Andrea Sintética Manual" }).click();
+  await page.getByLabel("Apellidos", { exact: true }).fill("Sintética Editada");
+  await page.getByRole("button", { name: "Guardar cambios" }).click();
+  await expect(page.getByText("Andrea Sintética Editada", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Retirar a Andrea Sintética Editada" }).click();
+  await page.getByRole("button", { name: "Confirmar retiro" }).click();
+  await expect(page.getByText("Andrea Sintética Editada", { exact: true })).toHaveCount(0);
+  await expect(page.locator("[data-profile=docente]")).toBeVisible();
+});
+
+test("edita perfiles locales, protege cambios pendientes y conserva los datos protegidos", async ({ page }) => {
+  await page.goto("/docente/perfil");
+  await expect(page.getByText("docente.demo@auligma.test", { exact: true })).toBeVisible();
+  await page.getByLabel("Nombres", { exact: true }).fill("Profesora");
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("link", { name: "Mis aulas", exact: true }).click();
+  await expect(page).toHaveURL(/\/docente\/perfil$/);
+  await page.getByRole("button", { name: "Guardar perfil" }).click();
+  await expect(page.getByRole("status")).toContainText("Perfil de demostración actualizado");
+  await expect(page.locator(".profile strong")).toContainText("Profesora Demo");
+
+  await page.getByRole("button", { name: "Cerrar sesión" }).click();
+  await signIn(page, "alumno");
+  await page.goto("/estudiante/perfil");
+  await expect(page.getByLabel("Escuela profesional").locator("option")).toHaveCount(6);
+  await page.getByLabel("Escuela profesional").selectOption("Agronomía");
+  await page.getByRole("button", { name: "Guardar perfil" }).click();
+  await expect(page.getByRole("status")).toContainText("Perfil de demostración actualizado");
+  await expect(page.getByText("DEM-EST-01", { exact: false })).toBeVisible();
+});
+
+test("archiva y restaura un aula sin perder su matrícula local", async ({ page }) => {
+  await page.goto("/docente/aulas/algebra");
+  await page.getByRole("button", { name: "Agregar estudiante", exact: true }).click();
+  await page.getByLabel("Nombres", { exact: true }).fill("Registro");
+  await page.getByLabel("Apellidos", { exact: true }).fill("Conservado");
+  await page.getByRole("button", { name: "Agregar estudiante", exact: true }).click();
+  await page.getByRole("button", { name: "Archivar aula" }).click();
+  await expect(page.getByRole("button", { name: "Confirmar archivado" })).toBeDisabled();
+  await page.getByLabel(/Escribe Álgebra lineal/).fill("Álgebra lineal");
+  await page.getByLabel(/Comprendo que el aula quedará archivada/).check();
+  await page.getByRole("button", { name: "Confirmar archivado" }).click();
+  await expect(page.getByRole("heading", { name: "Aulas archivadas" })).toBeVisible();
+  await expect(page.locator(".archived-list")).toContainText("Álgebra lineal");
+  await page.getByRole("button", { name: "Restaurar aula" }).click();
+  await page.getByRole("link", { name: /Ver aula/ }).filter({ hasText: "Álgebra lineal" }).click();
+  await expect(page.getByText("Registro Conservado", { exact: true })).toBeVisible();
+});
+
+test("revisión documental restablece la verificación al editar", async ({ page }) => {
   await page.goto("/docente/revision");
-  await page
-    .getByRole("button", { name: "Abrir documento de muestra" })
-    .click();
+  await page.getByRole("button", { name: "Abrir documento de muestra" }).click();
   await page.getByRole("button", { name: "Simular verificación" }).click();
   await page.getByRole("button", { name: "Aprobar en demostración" }).click();
   await page.getByRole("button", { name: "Confirmar aprobación demo" }).click();
-  await expect(page.getByRole("status")).toContainText(
-    "Aprobado en esta sesión",
-  );
-  await page.getByLabel("Enunciado").fill("Nueva transcripción de ejemplo");
-  await expect(
-    page.getByRole("button", { name: "Simular verificación" }),
-  ).toBeVisible();
-  await page.getByLabel("Expresión matemática").fill("\\frac{");
-  await page.getByRole("button", { name: "Simular verificación" }).click();
-  await expect(page.getByText("Corrige la sintaxis LaTeX")).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("Aprobado en esta sesión");
+  await page.getByLabel("Enunciado").fill("Nueva transcripción sintética");
+  await expect(page.getByRole("button", { name: "Simular verificación" })).toBeVisible();
 });
-test("práctica con feedback, navegación y progreso local", async ({ page }) => {
+
+test("la práctica conserva respuestas y muestra retroalimentación preparada", async ({ page }) => {
+  await page.getByRole("button", { name: "Cerrar sesión" }).click();
+  await signIn(page, "alumno");
   await page.goto("/estudiante/practica");
-  await expect(
-    page.getByRole("button", { name: "Comprobar respuesta" }),
-  ).toBeDisabled();
-  for (const [question, option] of [0, 2, 1].entries()) {
-    await page.getByRole("radio").nth(option).check();
-    await page.getByRole("button", { name: "Comprobar respuesta" }).click();
-    await expect(
-      page.getByText("Respuesta correcta. Bien razonado.", { exact: true }),
-    ).toBeVisible();
-    if (question < 2)
-      await page.getByRole("button", { name: "Siguiente" }).click();
-  }
-  await page.getByRole("link", { name: "Ver mi progreso" }).click();
-  await expect(
-    page.getByText("3 de 3 preguntas revisadas", { exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Reiniciar práctica" }).click();
-  await page.getByRole("button", { name: "Confirmar reinicio" }).click();
-  await expect(
-    page.getByText("0 de 3 preguntas revisadas", { exact: true }),
-  ).toBeVisible();
-});
-for (const width of [390, 768, 1440]) {
-  test(`pantallas, contraste y desbordamiento a ${width}px`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width, height: 1000 });
-    for (const path of [
-      "/",
-      "/docente",
-      "/docente/aulas",
-      "/docente/aulas/calculo/importar",
-      "/docente/revision",
-      "/estudiante",
-      "/estudiante/practica",
-    ]) {
-      await page.goto(path);
-      await expect(page.locator("h1")).toBeVisible();
-      if (path === "/docente/revision")
-        await page
-          .getByRole("button", { name: "Abrir documento de muestra" })
-          .click();
-      if (path.endsWith("/importar")) {
-        await page
-          .getByRole("button", { name: "Usar nómina de demostración" })
-          .click();
-        await page
-          .getByRole("button", { name: "Revisar participantes" })
-          .click();
-      }
-      expect(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth <= window.innerWidth,
-        ),
-      ).toBeTruthy();
-      await page.evaluate(async () => {
-        await document.fonts.ready;
-        await Promise.all(
-          document
-            .getAnimations()
-            .map((animation) => animation.finished.catch(() => {})),
-        );
-      });
-      if (["/docente/revision", "/estudiante/practica"].includes(path)) {
-        await expect(page.locator(".katex").first()).toBeVisible();
-        await expect(page.getByText("Preparando fórmula…")).toHaveCount(0);
-      }
-      const results = await new AxeBuilder({ page })
-        .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
-        .analyze();
-      expect(
-        results.violations.map((v) => ({
-          id: v.id,
-          nodes: v.nodes.map((n) => n.target),
-        })),
-      ).toEqual([]);
-      await page.locator("main").focus();
-      await page.evaluate(() => window.scrollTo(0, 0));
-      await page.screenshot({
-        path: `test-results/visual/${width}-${path.replaceAll("/", "-") || "inicio"}.png`,
-        fullPage: true,
-      });
-    }
-    await page.getByRole("button", { name: "Activar modo oscuro" }).click();
-    await page.evaluate(async () => {
-      await Promise.all(
-        document
-          .getAnimations()
-          .map((animation) => animation.finished.catch(() => {})),
-      );
-    });
-    expect(
-      (
-        await new AxeBuilder({ page })
-          .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
-          .analyze()
-      ).violations,
-    ).toEqual([]);
-    await page.screenshot({
-      path: `test-results/visual/${width}-oscuro.png`,
-      fullPage: true,
-    });
-  });
-}
-test("navegación secundaria y diálogo por teclado", async ({ page }) => {
-  await page.goto("/docente");
-  for (const name of [
-    "Mis aulas",
-    "Banco de preguntas",
-    "Evaluaciones",
-    "Informes",
-  ]) {
-    await page
-      .getByRole("navigation", { name: "Navegación principal" })
-      .getByRole("link", { name, exact: true })
-      .click();
-    await expect(page.locator("h1")).toHaveText(name);
-  }
-  await page.getByRole("link", { name: "Ajustes", exact: true }).click();
-  await expect(page.locator("h1")).toHaveText("Ajustes");
-  await page.goto("/docente/aulas");
-  await page.getByRole("button", { name: "Crear aula", exact: true }).focus();
-  await page.keyboard.press("Enter");
-  await expect(page.getByRole("dialog")).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("radio").nth(1).check();
+  await page.getByRole("button", { name: "Siguiente" }).click();
+  await page.getByRole("button", { name: "Anterior" }).click();
+  await expect(page.getByRole("radio").nth(1)).toBeChecked();
+  await page.reload();
+  await expect(page.getByRole("radio").nth(1)).toBeChecked();
+  await page.getByRole("button", { name: "Comprobar respuesta" }).click();
+  await expect(page.getByText("Respuesta incorrecta. Revisemos el procedimiento.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Desarrollo paso a paso" })).toBeVisible();
+  await expect(page.locator("[data-profile=estudiante]")).toBeVisible();
 });

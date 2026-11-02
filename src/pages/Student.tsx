@@ -22,10 +22,11 @@ import {
 
 function useActivity() {
   const [params] = useSearchParams();
-  const { assessments } = useDemo();
+  const { assessments, classrooms } = useDemo();
   const id = params.get("actividad") || "repaso";
+  const enrolledIds = new Set(classrooms.filter((classroom) => classroom.students.some((student) => student.id === "demo-student")).map((classroom) => classroom.id));
   const activity = assessments.find(
-    (a) => a.id === id && a.status === "Publicada" && a.mode === "Práctica",
+    (a) => a.id === id && a.status === "Publicada" && a.mode === "Práctica" && enrolledIds.has(a.classroomId),
   );
   return { id, activity, questions: activity?.snapshot || preparedQuestions };
 }
@@ -72,6 +73,9 @@ function ActivityRow({
         <h2>{activity.title}</h2>
         <p className="muted">
           {questions.length} preguntas · {session.checked.length} revisadas ·
+          {activity.attemptPolicy.mode === "unlimited"
+            ? " Intentos ilimitados"
+            : ` Máximo ${activity.attemptPolicy.maxAttempts} intentos`} ·
           Práctica sin calificación
         </p>
       </div>
@@ -90,9 +94,11 @@ function ActivityRow({
   );
 }
 export function StudentHome() {
-  const { assessments } = useDemo();
+  const { assessments, classrooms } = useDemo();
+  const enrolledClassrooms = classrooms.filter((classroom) => !classroom.archivedAt && classroom.students.some((student) => student.id === "demo-student"));
+  const enrolledIds = new Set(enrolledClassrooms.map((classroom) => classroom.id));
   const available = assessments
-    .filter((a) => a.status === "Publicada" && a.mode === "Práctica")
+    .filter((a) => a.status === "Publicada" && a.mode === "Práctica" && enrolledIds.has(a.classroomId))
     .sort((a, b) => {
       const rank = (item: Assessment) => {
         const count = item.snapshot?.length || 0;
@@ -115,9 +121,13 @@ export function StudentHome() {
       <div className="context-strip">
         <strong>Prácticas disponibles</strong>
         <span>
-          Las fechas e intentos son de demostración; no restringen el acceso.
+          Las fechas y el consumo de intentos son locales y demostrativos.
         </span>
       </div>
+      <section className="student-classrooms" aria-labelledby="student-classrooms-title">
+        <div className="section-heading"><h2 id="student-classrooms-title">Mis aulas</h2><Badge>{enrolledClassrooms.length} asignada{enrolledClassrooms.length === 1 ? "" : "s"}</Badge></div>
+        {enrolledClassrooms.map((classroom) => <article key={classroom.id}><span className="course-symbol" aria-hidden="true">∂</span><div><strong>{classroom.name}</strong><p className="muted">Sección {classroom.section} · {classroom.period} · {classroom.shift}</p></div></article>)}
+      </section>
       <div className="question-list">
         {available.map((a, i) => (
           <ActivityRow key={a.id} activity={a} priority={i === 0} />
@@ -137,7 +147,7 @@ export function StudentHome() {
         </RouteCard>
       </div>
       <p className="notice">
-        Todas las aulas de esta demostración pertenecen al perfil ficticio. Los
+        Solo se muestran aulas vinculadas a la identidad ficticia Estudiante Demo. Los
         exámenes en modalidad Evaluación no se habilitan aquí: no hay
         calificaciones ni controles de examen reales.
       </p>
