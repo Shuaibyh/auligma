@@ -2,7 +2,7 @@
 
 ## Alcance implementado
 
-Integración incremental sobre la rama `fase-1.2`, sin despliegues ni cambios de credenciales. Se conserva el proveedor externo desactivado y la planificación manual. No se ejecutaron migraciones ni se recreó PostgreSQL. Tras la interrupción, el usuario autorizó respaldar estos avances en la rama de desarrollo; esta fase sigue pendiente de validación integral con una base de pruebas dedicada.
+Integración incremental sobre la rama `fase-1.2`, sin despliegues ni cambios de credenciales. Se conserva el proveedor externo desactivado y la planificación manual. En el cierre controlado se validó PostgreSQL real y se añadió el banco persistente de borradores mediante una migración aditiva. No se recrearon bases. Los resultados históricos siguientes se conservan como antecedentes; el resultado vigente figura en «Cierre controlado».
 
 - `server/ollama.ts`: API oficial `/api/chat`, JSON Schema, `think:false`, contexto 4096, límite de respuesta, timeout, cola de hasta cuatro solicitudes y una inferencia simultánea por proceso. `keep_alive:0` solicita descargar el modelo después de cada inferencia; aumenta la latencia de arranque pero limita memoria retenida.
 - Destino fijo `http://127.0.0.1:11434`; se rechazan URLs distintas y redirecciones. Solo se permiten `qwen3:4b` y `qwen3-vl:2b`. No se descargan modelos ni se llama a proveedores de nube.
@@ -90,11 +90,85 @@ Evaluación documental, sin instalación de Docling ni descarga de OCR. La docum
 
 Referencias: [instalación oficial](https://docling-project.github.io/docling/getting_started/installation/), [FAQ de Docling](https://docling-project.github.io/docling/faq/), [API oficial de Ollama](https://github.com/ollama/ollama/blob/main/docs/api.md), [parsers de SymPy y precauciones](https://docs.sympy.org/latest/modules/parsing.html).
 
+## Cierre controlado — 3 de noviembre de 2026
+
+### PostgreSQL y persistencia
+
+`DATABASE_TEST_URL` ya estaba configurada privadamente. Se comprobó conexión local y `current_database() = 'auligma_test'` antes de migraciones. `server/tests/test-database.ts` hace obligatoria esa comprobación para las suites PostgreSQL; rechaza cualquier otra base, incluida `auligma_dev`. No se imprimieron ni cambiaron contraseñas.
+
+Migración `server/migrations/202611030001_question_drafts.mjs`: crea exclusivamente `question_drafts`, con docente/aula y referencias opcionales a `academic_nodes` y `academic_materials`; contenido JSONB (enunciado, alternativas, respuesta propuesta, explicación, dificultad, tema y expresiones), resultado SymPy, estado de revisión, versión y fechas. No duplica modelos académicos. Aplicada primero en pruebas y después, verificando identidad y única migración pendiente, en `auligma_dev`. No altera filas académicas existentes. La reversión automática está desactivada para evitar borrar borradores.
+
+`server/persistent-questions.ts` implementa estas rutas relativas a `/api/v1/classrooms/:id`:
+
+| Método | Ruta | Alcance |
+|---|---|---|
+| GET | `/question-drafts?q=&nodeId=` | Hasta 100 borradores recientes, búsqueda literal y filtro por nodo |
+| GET | `/question-drafts/:draftId` | Recuperar contenido guardado |
+| POST | `/question-drafts` | Guardar nuevo borrador |
+| PUT | `/question-drafts/:draftId` | Actualizar con versión esperada; conflicto 409 sin sobrescribir |
+| POST | `/question-drafts/:draftId/discard` | Descarte lógico con versión y `confirmed:true`; conserva datos |
+
+Todas exigen docente autorizado y propietario del aula activa. Material y nodo deben pertenecer al aula; si se indica nodo, el material debe corresponder a él. Escritura y auditoría son transaccionales; se bloquean referencias durante la escritura. El estudiante no recibe este banco. El contenido privado no se copia al registro de auditoría.
+
+Cada guardado con `reviewed:true` ejecuta nuevamente SymPy en servidor, no admite resultados de verificación enviados por el cliente. `reviewed` requiere una única alternativa correcta, coincidencia con la respuesta propuesta y explicación no vacía declarada revisada por el docente. A/C equivalentes producen `invalid`; sintaxis no admitida o verificador ocupado/no disponible producen `indeterminate`. El resto queda `draft`. Ningún estado publica exámenes ni certifica semánticamente el texto de la explicación. El límite de un trabajador SymPy es compartido por las rutas del proceso.
+
+### Interfaz y pruebas vigentes
+
+Recorrido: aula → planificación → asistente local → borrador por tema → seleccionar nodo/material → revisar → guardar → consultar. `QuestionDraftBank` permite recuperar después de recargar y editar con versión, buscar, filtrar y descartar con confirmación. Errores de guardado conservan los campos. Se mantienen tokens y componentes de Geometría razonada; la revisión visual corrigió botones estrechos apilándolos en móvil.
+
+| Verificación | Resultado real |
+|---|---|
+| Backend completo, ejecución secuencial | **32 aprobadas, 0 fallidas, 0 omitidas** |
+| Tres casos PostgreSQL antes omitidos | Planificación, matrícula/aislamiento y concurrencia aprobados |
+| Banco PostgreSQL + SymPy reales | Escritura confirmada desde otra conexión y sesión, versiones concurrentes 200/409, material/tema, otro docente/aula, descarte lógico, A/C y resultado indeterminado |
+| Playwright | **14 aprobadas**, proceso terminado con código 0; sesión y API académica simuladas, SymPy real en los casos de equivalencia |
+| Banco UI | Recarga, recuperación y conservación ante error; 390/768/1440 px, Axe claro/oscuro sin infracciones detectadas |
+| TypeScript, ESLint, builds frontend/backend | Aprobados; persiste aviso de bundle frontend mayor de 500 kB |
+| Ollama | Servicio local disponible; `qwen3:4b` y `qwen3-vl:2b` instalados al cierre |
+
+La suite prueba errores de Ollama, timeout y modelo ausente mediante transporte simulado; no elimina modelos para simular fallos. Las mediciones de inferencia real son las documentadas anteriormente, no se repitieron en este cierre. OAuth usa proveedor/identidades sintéticos: no se afirma una nueva autenticación Google real. Las pruebas de persistencia usan Fastify real y PostgreSQL, no mocks; las de navegador no constituyen un recorrido completo navegador–Google–PostgreSQL–Ollama real.
+
+Comando reproducible backend: `node --env-file-if-exists=.env --import tsx --test --test-concurrency=1 server/tests/*.test.ts`. UI: `npm.cmd run test:e2e:local-ai`. En el primer intento UI los casos terminaron, pero el servidor Vite no cerró dentro del sandbox; se identificó y terminó únicamente ese proceso y la repetición fuera del sandbox finalizó normalmente. Capturas locales no versionadas en `test-results/fase-2-3-2/banco-*-claro.png` y `banco-*-oscuro.png`.
+
+Los fixtures sintéticos se revierten o eliminan por sus UUID únicamente en la base de pruebas verificada. No hubo commits, pushes, cambios de rama, despliegues, descarga de modelos ni modificación de credenciales durante este cierre.
+
+## Corrección del generador local — 3 de noviembre de 2026
+
+El error docente «No se pudo preparar un borrador válido» no conservaba diagnóstico: cualquier excepción de Qwen, transporte o validación terminaba como `question_failed`, y el registro solo mostraba `service_unavailable`. La ejecución exacta de «Regla del cociente / Derivada de funciones racionales / intermedia» demostró además tres defectos del contrato: el modelo podía contradecir `proposedAnswer` en su explicación, omitir la multiplicación explícita o la función completa requerida por SymPy, y producir alternativas duplicadas o algebraicamente ambiguas.
+
+La corrección mantiene Qwen3 4B y el backend existente:
+
+- `OllamaClient` clasifica de forma tipada modelo no disponible, timeout, JSON inválido, salida truncada, cola ocupada y fallo interno. No registra prompts, contenido, cookies ni credenciales.
+- El endpoint registra únicamente correlación, etapa, código, modelo, duración e intentos; devuelve mensajes docentes específicos con referencia.
+- El esquema exige `expression`, exactamente cuatro alternativas con `uniqueItems`, explicación no vacía e índice 0–3. La expresión y alternativas usan la gramática segura que SymPy admite.
+- Solo errores de formato, contrato o comprobación matemática activan un reintento; modelo ausente, timeout y cola no se repiten. El máximo permanece en dos inferencias totales.
+- SymPy contrasta la respuesta del modelo. Si el segundo resultado tiene expresión válida pero no forma opción única, reconstruye una alternativa correcta y tres distractores que vuelve a comprobar simbólicamente. Sustituye explicaciones contradictorias por una guía neutral y editable. Esto sigue siendo un borrador con revisión humana y `publicationAllowed:false`.
+- La interfaz recibe y completa la expresión original, conserva tema/subtema ante error y evita solicitudes duplicadas mientras procesa.
+
+Aceptación real con Ollama: 56,4 s, dos intentos. Qwen generó `f(x)=(2*x+3)/(x-1)`; SymPy produjo una única respuesta correcta y tres distractores no equivalentes. La explicación final no afirma certeza automática. El caso crítico A/C continúa devolviendo índices `[0,2]` y bloquea opción única en la ruta de verificación; la reconstrucción solo pertenece al generador de nuevos borradores.
+
+`scripts/verify-question-flow.ts` ejecutó además el recorrido HTTP real con Qwen y SymPy contra `auligma_test` en 54,3 s: generación, comprobación de opción única, guardado sin nodo/material, reconexión, recuperación con otra sesión docente, edición a versión 2 y denegación al estudiante. Los fixtures sintéticos se eliminaron por UUID al finalizar y nunca se autorizó publicación.
+
+Regresión vigente: **40 backend aprobadas, 0 fallidas, 0 omitidas** y **15 Playwright aprobadas**. TypeScript, ESLint y builds frontend/backend aprobaron; persiste el aviso conocido de bundle mayor de 500 kB. PostgreSQL real de pruebas confirmó borrador sin nodo/material, reconexión, edición versionada y aislamiento. La prueba de navegador usa API simulada; por restricciones de control del navegador queda pendiente repetir manualmente el guardado con la sesión Google real y confirmar después el registro en `auligma_dev`.
+
 ## Limitaciones y siguiente fase
 
-- El sílabo usa la persistencia existente; la integración transaccional nueva requiere QA con una base de pruebas dedicada antes de declararse verificada con PostgreSQL real.
-- Transcripciones y preguntas permanecen en memoria del formulario; no existe aún banco persistente real de preguntas ni publicación/calificación de Fase 2.4. No recargar antes de conservar manualmente el contenido útil.
+- Los borradores guardados sí persisten en PostgreSQL; las ediciones todavía no guardadas y las transcripciones permanecen en memoria. Guardar antes de salir o recargar. No existe autoguardado offline.
+- El banco mantiene la versión vigente y detecta conflictos; no guarda un historial completo recuperable de todas las versiones. El descarte conserva filas, pero no hay interfaz de restauración todavía. La lista tiene límite de 100 y carece de paginación.
+- La búsqueda filtra el nodo seleccionado, no todo su subárbol. La vinculación se elige explícitamente en el asistente, no cambia automáticamente con la selección del árbol.
 - Solo PNG para visión en esta iteración; convertir fotografías JPEG/WebP a PNG antes de subir. El reconocimiento de escritura manuscrita, diagramas complejos y mala iluminación no está acreditado.
 - Los fragmentos no se fusionan semánticamente entre sí: revisar continuidad y duplicados. No se garantiza extracción exhaustiva ni competencias/fechas ausentes.
 - La cola es por proceso; no ejecutar varios backends contra la misma GPU. No se afirma soporte concurrente para múltiples docentes. El tiempo en cola y los límites evitan carga ilimitada.
-- Antes de Fase 2.4: persistir preguntas y sus versiones, vincular temas/materiales, validar nuevamente en publicación, ampliar el dominio matemático con pruebas y medir documentos reales autorizados. La IA nunca sustituye la aprobación del docente.
+- Antes de Fase 2.4: prueba integral con sesión Google y documentos reales autorizados, historial recuperable, paginación y restauración; validar nuevamente al publicar, ampliar el dominio matemático con pruebas y medir carga multiusuario. Las explicaciones y la correspondencia entre enunciado y expresión requieren juicio docente. La IA nunca sustituye su aprobación.
+
+## Cierre definitivo — 3 de noviembre de 2026
+
+La prueba manual docente confirmó el guardado de la pregunta «Deriva la función f(x) = (2*x + 3)/(x - 1)». Una auditoría posterior de solo lectura en `auligma_dev` encontró exactamente un borrador activo: versión 1, estado `draft`, cuatro alternativas, explicación presente, docente activo, aula `LIMITES` y nodo «regla del cociente». Existe un único evento `question_draft.saved`. El contenido conserva `reviewed:false`, no tiene verificación persistida y la única tabla de preguntas es `question_drafts`; por tanto, no se publicó automáticamente. Usuarios y matrículas permanecieron en dos y una filas, respectivamente.
+
+La recuperación y edición se validaron contra `auligma_test` con Fastify y PostgreSQL reales: una segunda sesión docente recuperó el registro, la actualización pasó de versión 1 a 2, otra conexión leyó la edición y el estudiante recibió 403. Otro docente y otra aula tampoco pueden acceder; los identificadores se comprueban junto con aula y propietario. El caso A/C equivalente continúa bloqueado, un resultado SymPy indeterminado no se acepta como revisado y el analizador matemático no ejecuta Python arbitrario.
+
+Para evitar la confusión observada tras F5, el navegador recuerda únicamente el modo del asistente por aula mediante `sessionStorage`; no guarda contenido académico. Al volver al modo de preguntas, el panel se abre, consulta automáticamente el banco y muestra los borradores sin regenerarlos. Los cambios del editor sin guardar muestran un aviso y activan la protección nativa antes de recargar o salir.
+
+Regresión final: **40 pruebas backend aprobadas**, **15 Playwright aprobadas**, TypeScript, ESLint, builds frontend/backend y `git diff --check` correctos. Playwright cubrió 390, 768 y 1440 px y Axe sin infracciones en el flujo del banco. Fastify, Vite y Ollama respondieron 200; `qwen3:4b` y `qwen3-vl:2b` estaban disponibles. OAuth se regresionó con proveedor e identidades sintéticos: el inicio Google real corresponde a la validación manual informada por el docente, no a una automatización de esta ejecución.
+
+No se modificaron credenciales, perfiles, matrículas ni el borrador real. No hubo commits, push, despliegue, cambio de rama, descarga de modelos ni uso de servicios externos.

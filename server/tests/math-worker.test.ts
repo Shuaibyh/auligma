@@ -7,6 +7,7 @@ test('Matemática: caso crítico A y C equivalentes bloquea opción única', asy
   assert.equal(result.status, 'VERIFICADO');
   assert.deepEqual(result.correctIndices, [0, 2]);
   assert.equal(result.singleChoiceValid, false); assert.equal(result.publicationAllowed, false);
+  assert.equal(typeof result.expectedExpression, 'string');
 });
 test('Matemática: producto, cadena y dominio racional', async () => {
   for (const [expression, answer] of [['x*x', '2*x'], ['(x+1)**3', '3*(x+1)**2'], ['x**3', '3*x**2']]) {

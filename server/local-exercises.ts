@@ -1,10 +1,12 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Knex } from 'knex';
+import { randomUUID } from 'node:crypto';
 import type { Principal } from './enrollments.ts';
 import { ApiError } from './identity.ts';
-import { localOllama } from './ollama.ts';
+import { localOllama, LocalAiError } from './ollama.ts';
 import { verifyMath, type MathInput } from './math-verifier.ts';
 import { generateQuestionDraft } from './question-drafts.ts';
+import { registerPersistentQuestions } from './persistent-questions.ts';
 
 export const exerciseSchema = { type: 'object', additionalProperties: false, required: ['statement', 'alternatives', 'warnings'], properties: {
   statement: { type: 'string', maxLength: 6000 }, alternatives: { type: 'array', maxItems: 8, items: { type: 'string', maxLength: 1000 } }, warnings: { type: 'array', maxItems: 20, items: { type: 'string', maxLength: 500 } },
@@ -24,6 +26,7 @@ export function validatePng(encoded: string) {
 }
 
 export function registerExerciseRoutes(app: FastifyInstance, db: Knex, teacher: (request: FastifyRequest) => Promise<Principal>) {
+  registerPersistentQuestions(app, db, teacher);
   const params = { type: 'object', additionalProperties: false, required: ['id'], properties: { id: { type: 'string', format: 'uuid' } } };
   const active = new Set<string>();
   async function authorized(request: FastifyRequest<{ Params: { id: string } }>) {
@@ -61,11 +64,32 @@ export function registerExerciseRoutes(app: FastifyInstance, db: Knex, teacher: 
     if (process.env.AI_PROVIDER !== 'ollama') throw new ApiError(503, 'ai_not_configured', 'Configura AI_PROVIDER=ollama.');
     if (active.has(user.id) || active.size >= 4) throw new ApiError(429, 'ai_busy', 'Ya hay una solicitud en curso.');
     active.add(user.id);
+    const correlationId = randomUUID(), startedAt = performance.now();
     const controller = new AbortController();
     const close = () => { if (!reply.raw.writableEnded) controller.abort(); };
     reply.raw.once('close', close);
-    try { return await generateQuestionDraft(request.body, controller.signal); }
-    catch { throw new ApiError(503, 'question_failed', 'No se pudo preparar un borrador válido. Revisa el tema o inténtalo nuevamente.'); }
+    try {
+      const draft = await generateQuestionDraft(request.body, controller.signal);
+      app.log.info({ event: 'local_question_generated', correlationId, model: 'qwen3:4b', durationMs: Math.round(performance.now() - startedAt), attempts: draft.generationAttempts }, 'Borrador local preparado');
+      return draft;
+    } catch (error) {
+      const diagnostic = error instanceof LocalAiError ? error : new LocalAiError('AI_INTERNAL_ERROR', 'question_generation', 'Fallo interno de generación.');
+      app.log.warn({ event: 'local_question_failed', correlationId, code: diagnostic.code, stage: diagnostic.stage,
+        model: 'qwen3:4b', durationMs: Math.round(performance.now() - startedAt) }, 'No se preparó el borrador local');
+      const messages: Record<string, string> = {
+        AI_MODEL_UNAVAILABLE: 'Ollama no está disponible o falta el modelo qwen3:4b.',
+        AI_TIMEOUT: 'La generación agotó el tiempo disponible. Revisa la carga local e inténtalo nuevamente.',
+        AI_INVALID_JSON: 'Qwen no devolvió un JSON válido después del reintento controlado.',
+        AI_SCHEMA_VALIDATION_FAILED: 'Qwen devolvió un borrador incompleto o con campos inválidos después del reintento.',
+        AI_INVALID_ALTERNATIVES: 'Qwen no produjo cuatro alternativas distintas después del reintento.',
+        AI_MATH_VALIDATION_FAILED: 'Qwen no produjo una pregunta de opción única matemáticamente verificable después del reintento.',
+        AI_OUTPUT_TRUNCATED: 'La respuesta de Qwen quedó incompleta después del reintento.',
+        AI_BUSY: 'El asistente local está ocupado. Espera a que termine la solicitud anterior.',
+        AI_INTERNAL_ERROR: 'No se pudo completar la generación local.',
+      };
+      throw new ApiError(diagnostic.code === 'AI_BUSY' ? 429 : ['AI_INVALID_JSON','AI_SCHEMA_VALIDATION_FAILED','AI_INVALID_ALTERNATIVES','AI_MATH_VALIDATION_FAILED','AI_OUTPUT_TRUNCATED'].includes(diagnostic.code) ? 422 : 503,
+        diagnostic.code.toLowerCase(), `${messages[diagnostic.code]} Referencia: ${correlationId}`);
+    }
     finally { active.delete(user.id); reply.raw.off('close', close); }
   });
   let mathBusy = false;

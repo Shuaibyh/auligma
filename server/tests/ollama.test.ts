@@ -1,11 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { OllamaClient } from '../ollama.ts';
+import { LocalAiError, OllamaClient } from '../ollama.ts';
+
+const hasCode = (code: string) => (error: unknown) => error instanceof LocalAiError && error.code === code;
 
 const input = { model: 'qwen3:4b', prompt: 'Documento sintético', schema: { type: 'object' } };
+test('Ollama: modelo ausente no produce una respuesta inventada', async () => {
+  await assert.rejects(new OllamaClient(1000, undefined, async () => Response.json({ error: 'model not found' }, { status: 404 })).chat(input), hasCode('AI_MODEL_UNAVAILABLE'));
+});
 test('Ollama: restringe servidor y modelos locales', async () => {
   assert.throws(() => new OllamaClient(1000, 'https://example.com'));
-  await assert.rejects(new OllamaClient().chat({ ...input, model: 'modelo-remoto' }));
+  await assert.rejects(new OllamaClient().chat({ ...input, model: 'modelo-remoto' }), hasCode('AI_MODEL_UNAVAILABLE'));
 });
 test('Ollama: salida estructurada y descarga de memoria solicitada', async () => {
   const transport: typeof fetch = async (_url, options) => {
@@ -17,10 +22,9 @@ test('Ollama: salida estructurada y descarga de memoria solicitada', async () =>
   const result = await new OllamaClient(1000, undefined, transport).chat(input);
   assert.deepEqual(result.payload, { title: 'Sintético' }); assert.equal(result.metrics.tokensPerSecond, 10);
 });
-test('Ollama: rechaza JSON inválido y salida truncada', async () => {
-  for (const result of [{ done: true, message: { content: 'inválido' } }, { done: true, done_reason: 'length', message: { content: '{}' } }]) {
-    await assert.rejects(new OllamaClient(1000, undefined, async () => Response.json(result)).chat(input));
-  }
+test('Ollama: distingue JSON inválido y salida truncada', async () => {
+  await assert.rejects(new OllamaClient(1000, undefined, async () => Response.json({ done: true, message: { content: 'inválido' } })).chat(input), hasCode('AI_INVALID_JSON'));
+  await assert.rejects(new OllamaClient(1000, undefined, async () => Response.json({ done: true, done_reason: 'length', message: { content: '{}' } })).chat(input), hasCode('AI_OUTPUT_TRUNCATED'));
 });
 test('Ollama: serializa inferencias y respeta cancelación', async () => {
   let active = 0; let maximum = 0;

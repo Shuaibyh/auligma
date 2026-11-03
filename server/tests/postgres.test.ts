@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID, randomBytes } from 'node:crypto';
-import { createDatabase } from '../db.ts';
+import { verifiedTestDatabase } from './test-database.ts';
 import { readConfig } from '../config.ts';
 import { authorizeIdentity } from '../identity.ts';
 import { buildApp, hash } from '../app.ts';
@@ -9,7 +9,7 @@ import { buildApp, hash } from '../app.ts';
 // Solo contra una base de pruebas dedicada, nunca DATABASE_URL del producto.
 const url = process.env.DATABASE_TEST_URL;
 test('PostgreSQL real: matrículas institucionales, conciliación, aislamiento y revocación', { skip: !url && 'Falta DATABASE_TEST_URL: no se simula PostgreSQL' }, async () => {
-  const db = createDatabase(url);
+  const db = await verifiedTestDatabase(url);
   try { await db.migrate.latest(); } catch (error) { await db.destroy(); throw error; }
   const tx = await db.transaction();
   const config = readConfig({ DATABASE_URL:url,ENABLE_PILOT_TEACHERS:'true',PILOT_TEACHER_EMAILS:'pilot@example.invalid,other-pilot@example.invalid' });
@@ -128,7 +128,7 @@ test('PostgreSQL real: matrículas institucionales, conciliación, aislamiento y
 });
 
 test('PostgreSQL real: dos incorporaciones simultáneas son idempotentes', { skip: !url && 'Falta DATABASE_TEST_URL: no se simula PostgreSQL' }, async () => {
-  const db=createDatabase(url);await db.migrate.latest();
+  const db=await verifiedTestDatabase(url);await db.migrate.latest();
   const config=readConfig({DATABASE_URL:url});const app=await buildApp(config,db);
   const teacherId=randomUUID(),subjectId=randomUUID(),classroomId=randomUUID(),identityId=randomUUID(),authorizationId=randomUUID();
   const teacherEmail=`teacher-${randomUUID()}@example.invalid`,subject=`Concurrente ${randomUUID()}`,token=randomBytes(32).toString('base64url');

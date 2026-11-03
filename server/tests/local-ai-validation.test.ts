@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { assertProposal, emptyProposal } from '../syllabus-ai.ts';
 import { validateExercise, validatePng } from '../local-exercises.ts';
-import { OllamaClient } from '../ollama.ts';
+import { LocalAiError, OllamaClient } from '../ollama.ts';
 
 test('IA: rechaza tipos y fechas inválidos del modelo', () => {
   assert.throws(() => assertProposal({ ...emptyProposal(), competencies: null } as never));
@@ -17,7 +17,7 @@ test('Visión: rechaza campos extra, tipos inválidos e imágenes arbitrarias', 
 });
 test('Ollama: servidor no disponible, timeout y cola limitada', async () => {
   const input = { model: 'qwen3:4b', prompt: 'Sintético', schema: {} };
-  await assert.rejects(new OllamaClient(100, undefined, async () => { throw new Error('ECONNREFUSED'); }).chat(input));
+  await assert.rejects(new OllamaClient(100, undefined, async () => { throw new Error('ECONNREFUSED'); }).chat(input), error => error instanceof LocalAiError && error.code === 'AI_MODEL_UNAVAILABLE');
   const transport: typeof fetch = async (_url, options) => new Promise((_resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('timeout')), 200);
     options?.signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new Error('cancelado')); }, { once: true });
@@ -25,6 +25,6 @@ test('Ollama: servidor no disponible, timeout y cola limitada', async () => {
   const client = new OllamaClient(100, undefined, transport);
   const pending = Array.from({ length: 4 }, () => client.chat(input));
   const settled = Promise.allSettled(pending);
-  await assert.rejects(client.chat(input), /cola/);
-  assert.ok((await settled).every(result => result.status === 'rejected'));
+  await assert.rejects(client.chat(input), error => error instanceof LocalAiError && error.code === 'AI_BUSY');
+  assert.ok((await settled).every(result => result.status === 'rejected' && result.reason instanceof LocalAiError && result.reason.code === 'AI_TIMEOUT'));
 });

@@ -102,7 +102,7 @@ def verify(data):
     duplicates = [[i, j] for i in range(len(parsed)) for j in range(i + 1, len(parsed)) if s.cancel(parsed[i] - parsed[j]) == 0]
     correct = [i for i, item in enumerate(results) if item['status'] == 'CORRECTA']
     valid = len(correct) == 1 and not duplicates and all(item['status'] != 'INDETERMINADO' for item in results)
-    return {'status': 'VERIFICADO', 'alternatives': results, 'correctIndices': correct, 'duplicatePairs': duplicates,
+    return {'status': 'VERIFICADO', 'expectedExpression': str(expected), 'alternatives': results, 'correctIndices': correct, 'duplicatePairs': duplicates,
             'singleChoiceValid': valid, 'publicationAllowed': False,
             'restrictions': [str(item) + ' != 0' for item in restrictions],
             'explanation': 'Hay respuestas equivalentes o ambiguas: modifica los distractores.' if not valid else 'Comprobación simbólica racional completada; falta aprobación docente.'}

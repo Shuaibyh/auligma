@@ -1,8 +1,50 @@
 import { test, expect } from '@playwright/test';
+import type { DraftContent } from '../src/components/QuestionDraftBank';
 import AxeBuilder from '@axe-core/playwright';
 
 const teacher={id:'planning-teacher',role:'docente',email:'teacher@example.invalid',firstNames:'Docente',lastNames:'Sintético',phone:'',photo:null,schoolId:null,universityCode:null,professionalInfo:'',profileComplete:true};
 const student={...teacher,id:'planning-student',role:'estudiante',email:'student@undc.edu.pe',firstNames:'Estudiante',schoolId:4};
+
+for (const width of [390, 768, 1440]) test(`Banco de borradores: guardado y recuperación UI simulada a ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 1000 });
+  await mockTeacherPlanning(page);
+  let saved: { id: string; version: number; content: DraftContent; review_status: string; updated_at: string } | null = null;
+  let failSave = false;
+  await page.route('**/api/v1/classrooms/*/question-drafts**', async route => {
+    if (route.request().method() === 'POST' || route.request().method() === 'PUT') {
+      if (failSave) return route.fulfill({ status: 503, json: { message: 'Conexión interrumpida' } });
+      saved = { id: 'synthetic-draft', version: (saved?.version || 0) + 1, content: route.request().postDataJSON(), review_status: 'draft', updated_at: new Date().toISOString() };
+      return route.fulfill({ status: 201, json: saved });
+    }
+    return route.fulfill({ json: route.request().url().includes('/synthetic-draft') ? saved : saved ? [saved] : [] });
+  });
+  async function openEditor() {
+    const panel = page.locator('details.local-ai-panel');
+    if (!await panel.evaluate(element => (element as HTMLDetailsElement).open)) await page.getByText('Asistente local · Sílabos, ejercicios y banco de borradores', { exact: true }).click();
+    await page.getByLabel('Análisis', { exact: true }).selectOption('question');
+  }
+  await page.goto(`/docente/cursos/${classroom.id}/planificacion`); await openEditor();
+  await page.getByLabel('Enunciado reconocido').fill('Pregunta sintética persistida');
+  await page.getByLabel('Alternativas corregidas').fill('2*x\nx\n0\n1');
+  await page.getByLabel('Tema', { exact: true }).fill('Derivadas');
+  await page.getByRole('button', { name: 'Guardar borrador', exact: true }).click();
+  await expect(page.getByText(/Borrador guardado · versión 1/)).toBeVisible();
+  await page.reload(); await openEditor();
+  await expect(page.getByLabel('Análisis', { exact: true })).toHaveValue('question');
+  await page.getByRole('button', { name: 'Pregunta sintética persistida · v1' }).click();
+  await expect(page.getByLabel('Enunciado reconocido')).toHaveValue('Pregunta sintética persistida');
+  failSave = true;
+  await page.getByLabel('Enunciado reconocido').fill('Corrección conservada ante error');
+  await page.getByRole('button', { name: 'Guardar borrador · v1', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Tus campos permanecen');
+  await expect(page.getByLabel('Enunciado reconocido')).toHaveValue('Corrección conservada ante error');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  expect((await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze()).violations).toEqual([]);
+  await page.screenshot({ path: `test-results/fase-2-3-2/banco-${width}-claro.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Activar modo oscuro' }).click();
+  expect((await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze()).violations).toEqual([]);
+  await page.screenshot({ path: `test-results/fase-2-3-2/banco-${width}-oscuro.png`, fullPage: true });
+});
 const classroom={id:'44444444-4444-4444-8444-444444444444',name:'Curso sintético de planificación',section:'P1',period:'2099-I',shift:'Mañana',teacherName:'Docente Sintético',archivedAt:null};
 const nodes=[
   {id:'unit',planId:'plan',parentId:null,type:'unit',title:'Unidad sintética',description:'Bloque temático verificable.',position:1000,status:'published',publishedAt:'2099-01-01',archivedAt:null,startsOn:null,endsOn:null},
@@ -10,6 +52,33 @@ const nodes=[
   {id:'topic',planId:'plan',parentId:'week',type:'topic',title:'Tema publicado',description:'Contenido visible.',position:1000,status:'published',publishedAt:'2099-01-01',archivedAt:null,startsOn:null,endsOn:null},
   {id:'draft',planId:'plan',parentId:'week',type:'subtopic',title:'Borrador docente',description:'No visible al estudiante.',position:2000,status:'draft',publishedAt:null,archivedAt:null,startsOn:null,endsOn:null},
 ];
+
+test('Generador local: conserva campos ante error específico y carga el contrato corregido', async ({ page }) => {
+  await mockTeacherPlanning(page); let calls = 0;
+  await page.route(`**/api/v1/classrooms/${classroom.id}/ai/questions`, route => {
+    calls++;
+    if (calls === 1) return route.fulfill({ status: 422, json: { error: { code: 'ai_invalid_alternatives', message: 'Qwen no produjo cuatro alternativas distintas después del reintento. Referencia: synthetic-reference' } } });
+    return route.fulfill({ json: { statement: 'Deriva f(x)=(2*x+3)/(x-1)', expression: '(2*x+3)/(x-1)', alternatives: ['-5/(x-1)**2','(-5/(x-1)**2)+1','(-5/(x-1)**2)-1','5/(x-1)**2'], proposedAnswer: 0,
+      explanation: 'Aplica la regla del cociente y revisa cada término.', warnings: ['SymPy realizó una comprobación preliminar; aún requiere revisión docente.'] } });
+  });
+  await page.goto(`/docente/cursos/${classroom.id}/planificacion`);
+  await page.getByText('Asistente local · Sílabos, ejercicios y banco de borradores', { exact: true }).click();
+  await page.getByLabel('Análisis', { exact: true }).selectOption('question');
+  await page.getByLabel('Tema', { exact: true }).fill('Regla del cociente');
+  await page.getByLabel('Subtema').fill('Derivada de funciones racionales');
+  await page.getByLabel('Dificultad').selectOption('intermedia');
+  await page.getByLabel('Autorizo el procesamiento local de este documento.').check();
+  await page.getByRole('button', { name: 'Analizar localmente' }).click();
+  await expect(page.getByRole('alert')).toContainText('cuatro alternativas distintas');
+  await expect(page.getByLabel('Tema', { exact: true })).toHaveValue('Regla del cociente');
+  await expect(page.getByLabel('Subtema')).toHaveValue('Derivada de funciones racionales');
+  await page.getByRole('button', { name: 'Analizar localmente' }).click();
+  await expect(page.getByLabel('Enunciado reconocido')).toHaveValue('Deriva f(x)=(2*x+3)/(x-1)');
+  await expect(page.getByLabel('Expresión original')).toHaveValue('(2*x+3)/(x-1)');
+  await expect(page.getByLabel('Alternativas corregidas')).toHaveValue(/-5\/\(x-1\)\*\*2/);
+  await expect(page.getByLabel('Explicación propuesta · requiere revisión')).toHaveValue(/revisa cada término/);
+  await expect(page.getByText(/comprobación preliminar/)).toBeVisible();
+});
 
 for (const width of [390,768,1440]) test(`Fase 2.3.2: revisión local y bloqueo matemático a ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 1000 });
@@ -19,7 +88,7 @@ for (const width of [390,768,1440]) test(`Fase 2.3.2: revisión local y bloqueo 
     await route.fulfill({ json: await verifyMath(route.request().postDataJSON()) });
   });
   await page.goto(`/docente/cursos/${classroom.id}/planificacion`);
-  await page.getByText('Asistente local · Sílabos y ejercicios', { exact: true }).click();
+  await page.getByText('Asistente local · Sílabos, ejercicios y banco de borradores', { exact: true }).click();
   await page.getByLabel('Análisis', { exact: true }).selectOption('exercise');
   await expect(page.getByRole('button', { name: 'Analizar localmente' })).toBeDisabled();
   await page.getByLabel('Expresión original').fill('(3*x**2+2*x)/(x+1)');
@@ -74,6 +143,7 @@ async function mockTeacherPlanning(page:import('@playwright/test').Page){
   await page.route(`**/api/v1/classrooms/${classroom.id}`,route=>route.fulfill({json:classroom}));
   await page.route(`**/api/v1/classrooms/${classroom.id}/planning`,route=>route.fulfill({json:{plan:{id:'plan',title:'Plan sintético',weekCount:18,revision:4},nodes,materials:[]}}));
   await page.route(`**/api/v1/classrooms/${classroom.id}/syllabus-sources`,route=>route.fulfill({json:[]}));
+  await page.route(`**/api/v1/classrooms/${classroom.id}/question-drafts**`,route=>route.fulfill({json:[]}));
 }
 
 test('Fase 2.3.1: protege cambios sin guardar y conserva el estado tras un error',async({page})=>{
