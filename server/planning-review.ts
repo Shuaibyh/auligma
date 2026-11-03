@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { registerLocalAiRoutes } from './local-ai-routes.ts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Knex } from 'knex';
 import { ApiError } from './identity.ts';
@@ -27,6 +28,7 @@ function publicProposal(row:Record<string,unknown>,source?:Record<string,unknown
 }
 
 export function registerPlanningReviewRoutes(app:FastifyInstance,db:Knex,teacher:Guard) {
+  registerLocalAiRoutes(app, db, teacher);
   app.get<{Params:{id:string}}>('/api/v1/classrooms/:id/planning/destinations',{schema:{params:idParams}},async request=>{
     const user=await teacher(request);await ownedClassroom(db,user.id,request.params.id);
     const rows=await db('classrooms as c').join('subjects as s','s.id','c.subject_id').leftJoin('academic_plans as p','p.classroom_id','c.id').where('c.teacher_id',user.id).whereNot('c.id',request.params.id).whereNull('c.archived_at').whereNull('c.deleted_at').whereNull('s.archived_at').select('c.id','s.name','c.section','c.period','c.shift','p.id as plan_id').orderBy(['s.name','c.period','c.section']);

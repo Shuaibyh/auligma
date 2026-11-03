@@ -1,5 +1,11 @@
 # AULIGMA
 
+## IA local — Fase 2.3.2
+
+Ollama con Qwen3 4B y Qwen3-VL 2B, revisión docente y verificación racional con SymPy: [configuración, mediciones y limitaciones](docs/FASE_2_3_2.md).
+
+Inicio del backend local: `npm.cmd run dev:local-ai`. QA de planificación sin PostgreSQL: `npm.cmd run test:e2e:local-ai`. El banco persistente de preguntas y su publicación siguen fuera de esta fase.
+
 Plataforma educativa inteligente para la gestión de aulas universitarias, generación asistida de evaluaciones matemáticas y reforzamiento del aprendizaje.
 
 ## Estado

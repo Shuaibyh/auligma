@@ -1,0 +1,11 @@
+.local-ai-panel { margin-block: 24px; }
+.local-ai-panel > summary { cursor: pointer; font-weight: 600; padding-block: 8px; }
+.local-ai-panel > .form-stack { margin-top: 16px; }
+.local-ai-panel .local-ai-consent { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.local-ai-panel .local-ai-consent input { width: 20px; height: 20px; flex: 0 0 20px; margin: 0; }
+.question-draft-bank .button-row { flex-wrap: wrap; }
+.question-draft-bank .button-row .button { flex: 1 1 180px; overflow-wrap: normal; }
+@media (max-width: 600px) {
+  .question-draft-bank .button-row { flex-direction: column; align-items: stretch; }
+  .question-draft-bank .button-row .button { flex: none; width: 100%; }
+}

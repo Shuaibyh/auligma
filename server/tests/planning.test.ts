@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { unlink } from 'node:fs/promises';
 import path from 'node:path';
-import { createDatabase } from '../db.ts';
+import { verifiedTestDatabase } from './test-database.ts';
 import { readConfig } from '../config.ts';
 import { authorizeIdentity } from '../identity.ts';
 import { buildApp, hash } from '../app.ts';
@@ -29,7 +29,7 @@ function createPdf(text=''){
 const blankPdf=createPdf();
 
 test('PostgreSQL real: planificación jerárquica, publicación, materiales y permisos',{skip:!url&&'Falta DATABASE_TEST_URL',timeout:15000},async()=>{
-  const db=createDatabase(url);await db.migrate.latest();const tx=await db.transaction();
+  const db=await verifiedTestDatabase(url);await db.migrate.latest();const tx=await db.transaction();
   const config=readConfig({DATABASE_URL:url,ENABLE_PILOT_TEACHERS:'true',PILOT_TEACHER_EMAILS:'planning-pilot@example.invalid'});const app=await buildApp(config,tx);
   try{
     const teacher=await authorizeIdentity(tx,{sub:randomUUID(),email:'planning-pilot@example.invalid',firstNames:'Docente',lastNames:'Sintético'},config);

@@ -1,3 +1,5 @@
+import { OllamaSyllabusProvider } from './ollama-syllabus.ts';
+
 export type ProposalNodeType = 'unit'|'week'|'module'|'topic'|'subtopic'|'milestone';
 
 export type ProposalNode = {
@@ -36,12 +38,19 @@ export function emptyProposal(title = 'Propuesta de planificación'): SyllabusPr
   return { version: 1, title, subjectName: '', competencies: [], notes: '', unresolved: [], nodes: [] };
 }
 export function configuredSyllabusProvider(): SyllabusAiProvider | null {
-  // La selección del proveedor requiere una decisión explícita del propietario de AULIGMA.
-  // No se infiere una cuenta ni se lee una clave genérica para evitar envíos accidentales.
-  return null;
+  return process.env.AI_PROVIDER === 'ollama' ? new OllamaSyllabusProvider() : null;
 }
 
 export function assertProposal(value: SyllabusProposal) {
+  const string = (input: unknown, max: number) => typeof input === 'string' && input.length <= max;
+  const strings = (input: unknown, max: number, length: number) => Array.isArray(input) && input.length <= max && input.every(item => string(item, length));
+  if (!value || typeof value !== 'object' || !string(value.title, 160) || !string(value.subjectName, 160) || !string(value.notes, 10000) || !strings(value.competencies, 100, 1000) || !strings(value.unresolved, 100, 1000) || !Array.isArray(value.nodes)) throw new Error('invalid_proposal');
+  if (Object.keys(value).some(key => !['version','title','subjectName','competencies','notes','unresolved','nodes'].includes(key))) throw new Error('invalid_proposal');
+  const date = (input: unknown) => input === null || (typeof input === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input) && !Number.isNaN(Date.parse(input)) && new Date(input).toISOString().slice(0, 10) === input);
+  for (const node of value.nodes) {
+    if (node && Object.keys(node).some(key => !['key','parentKey','type','title','description','startsOn','endsOn','included','sourcePage','evidence','warnings'].includes(key))) throw new Error('invalid_proposal');
+    if (!node || typeof node !== 'object' || !string(node.key, 80) || !(node.parentKey === null || string(node.parentKey, 80)) || !string(node.title, 200) || !string(node.description, 10000) || !string(node.evidence, 1000) || !strings(node.warnings, 20, 500) || typeof node.included !== 'boolean' || !['unit','week','module','topic','subtopic','milestone'].includes(node.type) || !date(node.startsOn) || !date(node.endsOn) || (node.startsOn && node.endsOn && node.startsOn > node.endsOn) || !(node.sourcePage === null || (Number.isInteger(node.sourcePage) && node.sourcePage >= 1 && node.sourcePage <= 10000))) throw new Error('invalid_proposal');
+  }
   if (value.version !== 1 || !value.title.trim() || value.title.length > 160 || value.nodes.length > 500) throw new Error('invalid_proposal');
   const keys = new Set<string>();
   for (const node of value.nodes) {
