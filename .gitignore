@@ -1,4 +1,7 @@
 node_modules/
+.venv-math/
+__pycache__/
+*.pyc
 test-results/
 playwright-report/
 dist/

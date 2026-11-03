@@ -11,7 +11,36 @@ const nodes=[
   {id:'draft',planId:'plan',parentId:'week',type:'subtopic',title:'Borrador docente',description:'No visible al estudiante.',position:2000,status:'draft',publishedAt:null,archivedAt:null,startsOn:null,endsOn:null},
 ];
 
+for (const width of [390,768,1440]) test(`Fase 2.3.2: revisión local y bloqueo matemático a ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 1000 });
+  await mockTeacherPlanning(page);
+  await page.route(`**/api/v1/classrooms/${classroom.id}/ai/verify`, async route => {
+    const { verifyMath } = await import('../server/math-verifier');
+    await route.fulfill({ json: await verifyMath(route.request().postDataJSON()) });
+  });
+  await page.goto(`/docente/cursos/${classroom.id}/planificacion`);
+  await page.getByText('Asistente local · Sílabos y ejercicios', { exact: true }).click();
+  await page.getByLabel('Análisis', { exact: true }).selectOption('exercise');
+  await expect(page.getByRole('button', { name: 'Analizar localmente' })).toBeDisabled();
+  await page.getByLabel('Expresión original').fill('(3*x**2+2*x)/(x+1)');
+  await page.getByLabel('Alternativas corregidas').fill('(3*x**2+6*x+2)/(x+1)**2\n0\n3-1/(x+1)**2\n1');
+  await expect(page.getByRole('button', { name: 'Verificar con SymPy' })).toBeDisabled();
+  await page.getByLabel('Revisé y corregí las expresiones.').check();
+  await page.getByRole('button', { name: 'Verificar con SymPy' }).click();
+  await expect(page.getByText('Alternativas correctas: A, C')).toBeVisible();
+  await expect(page.getByText(/Opción única bloqueada/)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  expect((await new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa']).analyze()).violations).toEqual([]);
+  await page.screenshot({ path: `test-results/fase-2-3-2/local-${width}-claro.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Activar modo oscuro' }).click();
+  await page.screenshot({ path: `test-results/fase-2-3-2/local-${width}-oscuro.png`, fullPage: true });
+  await page.getByLabel('Expresión original').fill('x**2');
+  await expect(page.getByText('Alternativas correctas: A, C')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Verificar con SymPy' })).toBeDisabled();
+});
+
 for(const width of [390,768,1024,1440])test(`Fase 2.3: editor académico responsive a ${width}px`,async({page})=>{
+  await page.route(`**/api/v1/classrooms/${classroom.id}/syllabus-sources`,route=>route.fulfill({json:[]}));
   await page.setViewportSize({width,height:1000});
   await page.route('**/api/v1/me',route=>route.fulfill({json:{user:teacher,csrfToken:'planning-csrf'}}));
   await page.route('**/api/v1/classrooms?includeArchived=true',route=>route.fulfill({json:[classroom]}));

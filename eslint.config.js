@@ -8,6 +8,7 @@ export default tseslint.config(
       "dist/**",
       "build/**",
       "node_modules/**",
+      ".venv-math/**",
       "test-results/**",
       "playwright-report/**",
     ],
