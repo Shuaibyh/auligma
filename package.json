@@ -16,7 +16,7 @@
     "db:cleanup": "tsx --env-file-if-exists=.env server/manage.ts cleanup",
     "teacher:authorize": "tsx --env-file-if-exists=.env server/manage.ts authorize",
     "teacher:revoke": "tsx --env-file-if-exists=.env server/manage.ts revoke",
-    "test:server": "tsx --env-file-if-exists=.env --test server/tests/*.test.ts",
+    "test:server": "tsx --env-file-if-exists=.env --test --test-concurrency=1 server/tests/*.test.ts",
     "test:e2e:real": "playwright test --config playwright.real.config.ts",
     "test:e2e:local-ai": "playwright test --config playwright.local-ai.config.ts",
     "lint": "eslint .",

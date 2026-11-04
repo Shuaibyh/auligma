@@ -11,6 +11,7 @@ import { ApiError, authorizeIdentity } from './identity.ts';
 import { registerEnrollmentRoutes, type Principal } from './enrollments.ts';
 import { registerPlanningRoutes } from './planning.ts';
 import { registerPlanningReviewRoutes } from './planning-review.ts';
+import { registerAssessmentRoutes } from './assessments.ts';
 
 export const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const random = () => randomBytes(32).toString('base64url');
@@ -295,5 +296,6 @@ export async function buildApp(config: Config, db: Knex, exchange = exchangeGoog
   registerEnrollmentRoutes(app,db,principal,teacher);
   registerPlanningRoutes(app,db,principal,teacher);
   registerPlanningReviewRoutes(app,db,teacher);
+  registerAssessmentRoutes(app,db,teacher);
   return app;
 }

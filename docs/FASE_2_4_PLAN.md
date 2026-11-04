@@ -155,3 +155,89 @@ Los resultados de aula se consultan como proyecciones de intentos y calificacion
 ## Primer hito recomendado
 
 Implementar únicamente el hito 1: convertir un borrador aprobado en una revisión inmutable y permitir que un docente propietario cree una práctica en estado borrador que referencie esas revisiones. La aceptación exige migración aditiva en `auligma_test`, contratos sin solución para estudiantes, pruebas de otro docente/aula, conflictos de versión y ninguna publicación automática.
+
+## Estado del Hito 1 — implementado localmente el 3 de noviembre de 2026
+
+El Hito 1 implementa únicamente arquitectura persistente y API docente. No incorpora interfaz nueva, publicación, intentos, respuestas, calificación ni resultados.
+
+### Persistencia
+
+La migración aditiva `202611030002_assessment_foundation.mjs` define:
+
+- `question_revisions`: snapshot de un borrador revisado, alternativas con UUID estables, respuesta correcta privada, verificación, hash, autor y aprobación expresa. Un trigger de PostgreSQL permite exclusivamente la transición `draft → approved` sin cambiar contenido y bloquea después todo `UPDATE` o `DELETE`.
+- `assessments`: agregado editable de tipo `practice`, creado exclusivamente en estado `draft`, con propietario, aula y control optimista de versión.
+- `assessment_items`: composición editable con revisión aprobada, orden y puntaje positivo. Claves foráneas compuestas impiden mezclar aulas y restricciones únicas evitan posiciones o preguntas duplicadas.
+- `assessment_versions` y `assessment_version_items`: estructura vacía preparada para snapshots futuros. Sus triggers impiden mutación; este hito no crea registros ni expone publicación.
+
+Las relaciones nuevas son restrictivas respecto de aulas, borradores y revisiones. No hay cascadas que eliminen preguntas aprobadas. La migración se aplicó, revirtió y reaplicó en `auligma_test` y, tras respaldo y comparación de integridad, se aplicó una vez en `auligma_dev` el 3 de noviembre de 2026.
+
+### Contratos docentes disponibles
+
+Rutas relativas a `/api/v1/classrooms/:id`:
+
+| Método | Ruta | Alcance |
+|---|---|---|
+| GET | `/question-revisions` | Lista privada de revisiones propias del aula |
+| POST | `/question-drafts/:draftId/revisions` | Crea snapshot inmutable y vuelve a ejecutar SymPy |
+| POST | `/question-revisions/:revisionId/approve` | Aprobación docente expresa con comprobación matemática nueva |
+| GET/POST | `/assessments` | Lista o crea prácticas en borrador |
+| GET/PATCH | `/assessments/:assessmentId` | Consulta o edita metadatos con versión esperada |
+| GET | `/assessments/:assessmentId/preview` | Vista previa docente privada; `publicationAllowed:false` |
+| POST | `/assessments/:assessmentId/items` | Agrega una revisión aprobada de la misma aula |
+| PATCH | `/assessments/:assessmentId/items/:itemId` | Cambia orden o puntaje con control de versión |
+| POST | `/assessments/:assessmentId/items/:itemId/remove` | Retira un ítem confirmado y normaliza el orden |
+
+No existe contrato estudiantil para preguntas privadas ni prácticas en borrador. El guard de rol responde 403 al estudiante; otro docente o aula reciben 404 para evitar IDOR. Ningún DTO estudiantil con soluciones fue creado.
+
+### Validación vigente
+
+- Migración y rollback en PostgreSQL real de pruebas: aprobados, conservando tablas anteriores.
+- Revisiones válidas, inválidas e indeterminadas; aprobación expresa e inmutabilidad en base: aprobadas.
+- Práctica borrador, composición, puntajes, reordenamiento, retiro, reconexión y vista previa: aprobados.
+- Pregunta no aprobada, pregunta de otra aula, estudiante, otro docente, UUID manipulado, versión obsoleta y dos escrituras concurrentes: bloqueados.
+- Regresión backend completa: **42 aprobadas, 0 fallidas, 0 omitidas**.
+- TypeScript y ESLint: aprobados antes de la regresión completa.
+
+La UI docente y cualquier publicación pertenecen a decisiones posteriores. La migración aditiva ya está disponible en desarrollo; esto no habilita publicación, intentos estudiantiles ni calificaciones.
+
+## Preparación del Hito 2 — integración con Figma
+
+El Hito 2 implementará solo el constructor docente de prácticas en borrador. El recorrido objetivo es: aula → evaluaciones → nueva práctica → selección de revisiones aprobadas → orden y puntajes → configuración → guardado. La interfaz no se implementará hasta recibir y revisar el diseño de Figma Education.
+
+### Contratos existentes que consumirá la interfaz
+
+- Listado y creación de borradores mediante `GET/POST /api/v1/classrooms/:id/assessments`.
+- Edición de metadatos mediante `PATCH /api/v1/classrooms/:id/assessments/:assessmentId`, enviando la versión esperada.
+- Selección desde revisiones aprobadas de la misma aula; una revisión inválida, indeterminada o de otra aula no es elegible.
+- Composición mediante alta, edición, reordenamiento y retiro explícito de ítems.
+- Vista previa docente privada con `publicationAllowed:false`; no se mostrará ni habilitará una acción de publicación.
+- Sesión Google real, token CSRF, propiedad del aula y conflictos de versión permanecen obligatorios en cada mutación.
+
+### Componentes y bases React reutilizables
+
+- `RealApp`, `RealClassroom` y `ClassroomContext` para rutas, sesión real y contexto del aula.
+- `PageHeading`, `Badge`, `EmptyState` y `Modal` como primitivas visuales accesibles.
+- `MathBlock` y `MathRenderer` para enunciados y alternativas matemáticas con KaTeX.
+- El cliente de `auth/api.ts` para credenciales de sesión y CSRF.
+- `QuestionDraftBank` y `QuestionBank` como referencia de carga y revisión de contenido; no se reutilizará su estado de demostración como fuente real.
+- `Assessments.tsx`, `AssessmentEditor` y `AssessmentPreview` son prototipos visuales existentes. Deben mapearse a DTO reales y eliminar dependencias de `DemoContext` antes de formar parte del recorrido autenticado.
+
+### Entrega necesaria desde Figma
+
+- Marcos de 390, 768 y 1440 px para lista de evaluaciones, constructor, selector de preguntas, configuración y vista previa.
+- Componentes con variantes de reposo, foco, deshabilitado, carga, guardando, guardado, error, 403, 404 y conflicto 409.
+- Especificación de selección, reordenamiento por teclado, asignación de puntajes, resumen del total y protección de cambios sin guardar.
+- Tokens semánticos y tipográficos alineados con «Geometría razonada», sin valores visuales aislados que contradigan el sistema de diseño.
+- Copia final en español, orden de foco, nombres accesibles y comportamiento responsive de paneles y diálogos.
+- Identificadores de frames y componentes para mantener trazabilidad entre Figma, rutas y componentes React.
+
+### Secuencia de implementación del Hito 2
+
+1. Validar el diseño recibido contra los contratos, permisos y estados de error existentes.
+2. Definir DTO y adaptadores frontend sin duplicar los modelos privados del servidor.
+3. Integrar lista y creación de prácticas en el recorrido real del aula.
+4. Integrar selector de revisiones aprobadas, orden y puntajes con control de versión.
+5. Integrar configuración, guardado y vista previa privada, con protección de cambios no guardados.
+6. Probar aislamiento entre aulas, rol estudiante, CSRF, conflicto concurrente, teclado, responsive y recuperación tras recarga.
+
+Quedan expresamente fuera de este hito: publicación, versiones publicadas, intentos estudiantiles, respuestas, corrección, calificaciones y resultados.
