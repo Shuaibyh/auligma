@@ -23,7 +23,7 @@ const labels:Record<NodeType,string>={unit:'Unidad',week:'Semana',module:'Módul
 const symbols:Record<NodeType,string>={unit:'I',week:'S',module:'◇',topic:'∴',subtopic:'·',milestone:'◆'};
 
 export function ClassroomContext({course,active}:{course:RealClassroomData;active:'planning'|'students'}) {
-  return <nav className="classroom-context" aria-label="Secciones del aula"><Link to={`/docente/cursos/${course.id}`} className={active==='students'?'active':''}>Estudiantes</Link><Link to={`/docente/cursos/${course.id}/planificacion`} className={active==='planning'?'active':''}>Planificación</Link></nav>;
+  return <nav className="classroom-context" aria-label="Secciones del aula"><Link to={`/docente/cursos/${course.id}`} className={active==='students'?'active':''}>Estudiantes</Link><Link aria-current={active==='planning'?'page':undefined} to={`/docente/cursos/${course.id}/planificacion`} className={active==='planning'?'active':''}>Planificación</Link><Link to={`/docente/cursos/${course.id}/evaluaciones`}>Evaluaciones</Link></nav>;
 }
 
 function buildTree(nodes:AcademicNode[]){const tree=new Map<string|null,AcademicNode[]>();for(const node of nodes){const list=tree.get(node.parentId)||[];list.push(node);tree.set(node.parentId,list);}for(const list of tree.values())list.sort((a,b)=>a.position-b.position);return tree;}
