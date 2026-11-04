@@ -8,6 +8,7 @@ import { verifiedTestDatabase } from './test-database.ts';
 
 const url = process.env.DATABASE_TEST_URL;
 const migration = '202611030002_assessment_foundation.mjs';
+const publicationMigration = '202611040001_assessment_publication.mjs';
 const validContent = (expression = 'x**2', alternatives = ['2*x', 'x', '0', '1']) => ({
   statement: `Pregunta sintética sobre ${expression}`, alternatives, proposedAnswer: 0,
   explanation: 'Explicación sintética revisada por el docente.', difficulty: 'intermedia', topic: 'Derivadas sintéticas',
@@ -21,11 +22,13 @@ test('PostgreSQL real: migración aditiva de evaluaciones admite rollback y reap
     assert.equal(await db.schema.hasTable('question_revisions'), true);
     assert.equal(await db.schema.hasTable('assessments'), true);
     assert.equal(await db.schema.hasTable('assessment_versions'), true);
+    await db.migrate.down({ name: publicationMigration });
     await db.migrate.down({ name: migration });
     assert.equal(await db.schema.hasTable('question_revisions'), false);
     assert.equal(await db.schema.hasTable('assessments'), false);
     assert.equal(await db.schema.hasTable('question_drafts'), true);
     await db.migrate.up({ name: migration });
+    await db.migrate.up({ name: publicationMigration });
     assert.equal(await db.schema.hasTable('assessment_version_items'), true);
   } finally { await db.destroy(); }
 });
@@ -130,7 +133,7 @@ test('PostgreSQL real: revisiones inmutables y prácticas en borrador con aislam
     const current = concurrent.find(response => response.statusCode === 200)!.json();
     const removed = await app.inject({ method: 'POST', url: `${base}/assessments/${assessmentId}/items/${validItemId}/remove`, headers: headers(teacherToken), payload: { version: current.version, confirmed: true } });
     assert.equal(removed.statusCode, 200, removed.body); assert.equal(removed.json().items.length, 1); assert.equal(removed.json().items[0].position, 1);
-    const preview = await app.inject({ url: `${base}/assessments/${assessmentId}/preview`, headers: headers(teacherToken) }); assert.equal(preview.statusCode, 200); assert.equal(preview.json().publicationAllowed, false);
+    const preview = await app.inject({ url: `${base}/assessments/${assessmentId}/preview`, headers: headers(teacherToken) }); assert.equal(preview.statusCode, 200); assert.equal(preview.json().publicationAllowed, true);
 
     assert.equal((await app.inject({ url: `${base}/assessments/${assessmentId}`, headers: headers(studentToken) })).statusCode, 403);
     assert.equal((await app.inject({ url: `${base}/question-revisions`, headers: headers(studentToken) })).statusCode, 403);
@@ -149,6 +152,7 @@ test('PostgreSQL real: revisiones inmutables y prácticas en borrador con aislam
     assert.ok(Number((await db('audit_events').where({ resource_id: assessmentId }).count('* as n').first())?.n) >= 5);
   } finally {
     if (app) await app.close();
+    await db.migrate.down({ name: publicationMigration });
     await db.migrate.down({ name: migration });
     await db.transaction(async tx => {
       await tx('audit_events').whereIn('actor_id', [teacherId, otherTeacherId, studentId]).delete();
@@ -164,6 +168,7 @@ test('PostgreSQL real: revisiones inmutables y prácticas en borrador con aislam
       await tx('users').whereIn('id', [teacherId, otherTeacherId, studentId]).delete();
     });
     await db.migrate.up({ name: migration });
+    await db.migrate.up({ name: publicationMigration });
     assert.equal(Number((await db('users').count('* as n').first())?.n), baseline.users);
     assert.equal(Number((await db('enrollments').count('* as n').first())?.n), baseline.enrollments);
     assert.equal(Number((await db('question_drafts').count('* as n').first())?.n), baseline.drafts);

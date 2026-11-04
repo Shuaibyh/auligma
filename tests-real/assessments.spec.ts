@@ -11,15 +11,16 @@ const revisions = [
 ];
 
 type Item = { id: string; position: number; points: number; questionRevisionId: string; questionRevision: number; reviewStatus: string; content: typeof revisions[number]['content'] };
-type Assessment = { id: string; classroomId: string; type: 'practice'; status: 'draft'; title: string; instructions: string; version: number; createdAt: string; updatedAt: string; totalPoints: number; items: Item[]; publicationAllowed: false };
+type Assessment = { id: string; classroomId: string; type: 'practice'; status: 'draft' | 'published' | 'closed'; title: string; instructions: string; version: number; createdAt: string; updatedAt: string; totalPoints: number; items: Item[]; publicationAllowed: boolean };
 
 function makeAssessment(items: Item[] = []): Assessment {
-  return { id: '99999999-9999-4999-8999-999999999999', classroomId: classroom.id, type: 'practice', status: 'draft', title: 'Práctica de derivadas', instructions: 'Resuelve cada ejercicio y revisa tu procedimiento.', version: 3, createdAt: '2099-01-01T12:00:00Z', updatedAt: '2099-01-02T12:00:00Z', totalPoints: items.reduce((sum, item) => sum + item.points, 0), items, publicationAllowed: false };
+  return { id: '99999999-9999-4999-8999-999999999999', classroomId: classroom.id, type: 'practice', status: 'draft', title: 'Práctica de derivadas', instructions: 'Resuelve cada ejercicio y revisa tu procedimiento.', version: 3, createdAt: '2099-01-01T12:00:00Z', updatedAt: '2099-01-02T12:00:00Z', totalPoints: items.reduce((sum, item) => sum + item.points, 0), items, publicationAllowed: items.length > 0 };
 }
 
 async function mockAssessmentApi(page: Page, seeded = true) {
   let assessment = makeAssessment(seeded ? [{ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', position: 1, points: 2, questionRevisionId: revisions[0].id, questionRevision: 1, reviewStatus: 'approved', content: revisions[0].content }] : []);
-  const sync = () => { assessment.items.forEach((item, index) => { item.position = index + 1; }); assessment.totalPoints = assessment.items.reduce((sum, item) => sum + item.points, 0); assessment.updatedAt = new Date().toISOString(); };
+  let snapshot: Record<string, unknown> | null = null;
+  const sync = () => { assessment.items.forEach((item, index) => { item.position = index + 1; }); assessment.totalPoints = assessment.items.reduce((sum, item) => sum + item.points, 0); assessment.publicationAllowed = assessment.status === 'draft' && assessment.items.length > 0; assessment.updatedAt = new Date().toISOString(); };
   await page.route('**/api/v1/me', route => route.fulfill({ json: { user: teacher, csrfToken: 'assessment-csrf' } }));
   await page.route(`**/api/v1/classrooms/${classroom.id}`, route => route.fulfill({ json: classroom }));
   await page.route(`**/api/v1/classrooms/${classroom.id}/question-revisions`, route => route.fulfill({ json: revisions }));
@@ -28,6 +29,10 @@ async function mockAssessmentApi(page: Page, seeded = true) {
     expect(request.headers()['x-csrf-token'] || method === 'GET').toBeTruthy();
     if (url.pathname.endsWith('/assessments') && method === 'GET') return route.fulfill({ json: [assessment] });
     if (url.pathname.endsWith('/assessments') && method === 'POST') { const body = request.postDataJSON(); assessment = { ...makeAssessment([]), title: body.title, instructions: body.instructions, version: 1 }; return route.fulfill({ status: 201, json: assessment }); }
+    if (url.pathname.endsWith('/publish') && method === 'POST') { const body = request.postDataJSON(); assessment = { ...assessment, status: 'published', version: assessment.version + 1, publicationAllowed: false }; snapshot = { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', assessmentId: assessment.id, classroomId: classroom.id, revision: 1, sourceVersion: body.version, title: assessment.title, instructions: assessment.instructions, type: 'practice', totalPoints: assessment.totalPoints, contentHash: 'a'.repeat(64), opensAt: body.opensAt, dueAt: body.dueAt, closesAt: body.closesAt, publishedAt: new Date().toISOString(), items: assessment.items }; return route.fulfill({ json: snapshot }); }
+    if (url.pathname.endsWith('/versions') && method === 'GET') return route.fulfill({ json: snapshot ? [snapshot] : [] });
+    if (url.pathname.includes('/versions/') && url.pathname.endsWith('/preview') && method === 'GET') return route.fulfill({ json: snapshot });
+    if (url.pathname.endsWith('/close') && method === 'POST') { assessment = { ...assessment, status: 'closed', version: assessment.version + 1 }; return route.fulfill({ json: assessment }); }
     if (url.pathname.endsWith('/preview') && method === 'GET') return route.fulfill({ json: assessment });
     if (url.pathname.endsWith(`/assessments/${assessment.id}`) && method === 'GET') return route.fulfill({ json: assessment });
     if (url.pathname.endsWith(`/assessments/${assessment.id}`) && method === 'PATCH') { const body = request.postDataJSON(); assessment = { ...assessment, title: body.title, instructions: body.instructions, version: assessment.version + 1 }; sync(); return route.fulfill({ json: assessment }); }
@@ -55,10 +60,38 @@ test('Hito 2: crea, recupera, compone, ordena y previsualiza un borrador real', 
   await page.locator('.assessment-item').last().getByRole('button', { name: 'Guardar' }).click();
   await page.getByRole('button', { name: 'Subir pregunta 2' }).click();
   await expect.poll(() => state.value().items[0].content.topic).toBe('Regla del cociente');
-  await page.getByRole('link', { name: 'Vista previa' }).click();
-  await expect(page.getByText('Esta vista no publica ni registra respuestas.')).toBeVisible();
-  await expect(page.getByRole('button', { name: /Publicar/ })).toBeDisabled();
+  await page.getByRole('link', { name: 'Configurar y publicar' }).click();
+  await expect(page.getByText('Publicar crea una versión inmutable.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Revisar y publicar' })).toBeEnabled();
   await expect(page.locator('fieldset input:checked')).toHaveCount(0);
+});
+
+test('Hito 3: configura, confirma, consulta y cierra una publicación inmutable', async ({ page }) => {
+  await mockAssessmentApi(page);
+  await page.goto(`/docente/cursos/${classroom.id}/evaluaciones/${makeAssessment().id}/vista-previa`);
+  await page.getByLabel('Apertura opcional').fill('2099-04-01T10:00');
+  await page.getByLabel('Vencimiento opcional').fill('2099-04-02T10:00');
+  await page.getByLabel('Cierre automático opcional').fill('2099-04-03T10:00');
+  await page.getByRole('button', { name: 'Revisar y publicar' }).click();
+  await expect(page.getByRole('dialog')).toContainText('versión inmutable');
+  await page.getByRole('button', { name: 'Confirmar publicación' }).click();
+  await expect(page).toHaveURL(/\/versiones\/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb$/);
+  await expect(page.getByText('Snapshot publicado y protegido en PostgreSQL.')).toBeVisible();
+  await page.getByRole('link', { name: 'Volver al historial' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Práctica de derivadas' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cerrar práctica' }).click();
+  await page.getByRole('button', { name: 'Confirmar cierre' }).click();
+  await expect(page.getByText('CERRADA · HISTORIAL INMUTABLE')).toBeVisible();
+});
+
+for (const width of [390, 768, 1440]) test(`Hito 3: revisión de publicación accesible y responsive a ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 1000 });
+  await mockAssessmentApi(page);
+  await page.goto(`/docente/cursos/${classroom.id}/evaluaciones/${makeAssessment().id}/vista-previa`);
+  await expect(page.getByRole('heading', { name: 'Práctica de derivadas' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  expect((await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze()).violations).toEqual([]);
+  await page.screenshot({ path: `test-results/fase-2-4/hito-3-publicacion-${width}.png`, fullPage: true });
 });
 for (const width of [390, 768, 1024, 1440]) test(`Hito 2: constructor accesible y responsive a ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 1000 });

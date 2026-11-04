@@ -241,3 +241,7 @@ El Hito 2 implementará solo el constructor docente de prácticas en borrador. E
 6. Probar aislamiento entre aulas, rol estudiante, CSRF, conflicto concurrente, teclado, responsive y recuperación tras recarga.
 
 Quedan expresamente fuera de este hito: publicación, versiones publicadas, intentos estudiantiles, respuestas, corrección, calificaciones y resultados.
+
+## Estado del Hito 3 — implementado localmente el 4 de noviembre de 2026
+
+La publicación segura, la consulta docente de snapshots y el cierre manual están implementados y documentados en `docs/FASE_2_4_HITO_3.md`. La migración correspondiente se valida exclusivamente en `auligma_test` hasta recibir autorización para aplicarla en desarrollo. Intentos estudiantiles, respuestas, calificaciones y analítica permanecen fuera del alcance.
