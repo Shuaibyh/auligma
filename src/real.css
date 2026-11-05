@@ -392,3 +392,73 @@
   .proposal-node-grid { grid-template-columns: 1fr; }
   .proposal-node-grid .wide { grid-column: auto; }
 }
+
+/* Fase 2.4 · intentos estudiantiles seguros */
+.student-activity-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; }
+.activity-card { display: flex; flex-direction: column; min-width: 0; gap: 20px; }
+.activity-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; }
+.activity-card h2 { margin: 5px 0 8px; font-family: "Source Serif 4 Variable",serif; font-size: 27px; }
+.activity-card .button { margin-top: auto; text-align: center; }
+.activity-dates { display: grid; grid-template-columns: repeat(auto-fit,minmax(150px,1fr)); gap: 9px; margin: 0; }
+.activity-dates div { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--background); }
+.activity-dates dt { color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.activity-dates dd { margin: 5px 0 0; font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+.back-link { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 22px; }
+.attempt-intro { display: grid; gap: 28px; max-width: 900px; margin-inline: auto; }
+.attempt-rule-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
+.attempt-rule-grid article { padding: 18px; border: 1px solid var(--border); border-radius: 11px; text-align: center; background: var(--background); }
+.attempt-rule-grid strong { display: block; font-family: "Source Serif 4 Variable",serif; font-size: 32px; }
+.attempt-rule-grid span { color: var(--muted); font-size: 13px; }
+.attempt-rules ul { display: grid; gap: 8px; padding-left: 22px; color: var(--muted); }
+.attempt-intro > .button { justify-self: start; }
+.attempt-workspace { max-width: 1180px; margin-inline: auto; }
+.attempt-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 22px; margin-bottom: 22px; }
+.attempt-header h1 { margin: 5px 0 0; font-family: "Source Serif 4 Variable",serif; font-size: clamp(28px,4vw,42px); }
+.attempt-status { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 9px; }
+.autosave-status,.attempt-timer { min-height: 38px; display: inline-flex; align-items: center; gap: 7px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); font-size: 13px; font-weight: 800; }
+.autosave-status.saved { color: var(--accent-ink); }
+.autosave-status.error { color: var(--danger); }
+.attempt-timer { color: var(--primary); font-variant-numeric: tabular-nums; }
+.attempt-layout { display: grid; grid-template-columns: 210px minmax(0,1fr); gap: 18px; align-items: start; }
+.question-map { position: sticky; top: 18px; padding: 20px; }
+.question-map > div { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin: 16px 0; }
+.question-map button { aspect-ratio: 1; min-width: 40px; border: 1px solid var(--border); border-radius: 9px; background: var(--background); color: var(--text); font-weight: 800; cursor: pointer; }
+.question-map button.answered { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
+.question-map button.active { outline: 3px solid color-mix(in srgb,var(--primary) 25%,transparent); border-color: var(--primary); }
+.question-map small { color: var(--muted); }
+.question-panel { min-width: 0; padding: clamp(22px,4vw,40px); }
+.question-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; }
+.question-panel h2 { margin: 26px 0; font-family: "Source Serif 4 Variable",serif; font-size: clamp(23px,3vw,32px); line-height: 1.35; }
+.question-panel fieldset { display: grid; gap: 12px; min-width: 0; padding: 0; border: 0; }
+.answer-option { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 14px; min-height: 58px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 11px; background: var(--background); cursor: pointer; }
+.answer-option:hover { border-color: color-mix(in srgb,var(--primary) 50%,var(--border)); }
+.answer-option.selected { border-color: var(--primary); background: color-mix(in srgb,var(--primary) 8%,var(--surface)); box-shadow: inset 3px 0 var(--primary); }
+.answer-option input { position: absolute; opacity: 0; pointer-events: none; }
+.answer-option:focus-within { outline: 3px solid color-mix(in srgb,var(--primary) 28%,transparent); outline-offset: 2px; }
+.answer-letter { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; color: var(--primary); font-weight: 800; }
+.answer-option.selected .answer-letter { border-color: var(--primary); background: var(--primary); color: white; }
+.answer-option .katex { max-width: 100%; overflow-x: auto; overflow-y: hidden; }
+.attempt-navigation { display: flex; justify-content: space-between; gap: 14px; margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--border); }
+.submission-summary { display: flex; gap: 14px; align-items: center; margin: 22px 0; padding: 16px; border: 1px solid var(--border); border-radius: 10px; }
+.submission-summary svg { flex: 0 0 auto; color: var(--accent); }
+.submission-summary p { margin: 3px 0 0; }
+.submission-receipt { max-width: 720px; margin: 8dvh auto; text-align: center; }
+.submission-receipt > svg { width: 58px; height: 58px; color: var(--accent); }
+.submission-receipt h1 { font-family: "Source Serif 4 Variable",serif; font-size: clamp(30px,5vw,46px); }
+.submission-receipt .button { margin-top: 18px; }
+@media(max-width: 900px) {
+  .student-activity-grid { grid-template-columns: 1fr; }
+  .attempt-layout { grid-template-columns: 1fr; }
+  .question-map { position: static; }
+  .question-map > div { grid-template-columns: repeat(auto-fit,minmax(42px,1fr)); }
+  .question-map button { aspect-ratio: auto; min-height: 44px; }
+}
+@media(max-width: 600px) {
+  .attempt-rule-grid { grid-template-columns: 1fr; }
+  .attempt-header { align-items: stretch; flex-direction: column; }
+  .attempt-status { justify-content: flex-start; }
+  .question-panel { padding: 20px 16px; }
+  .attempt-navigation { flex-direction: column-reverse; }
+  .attempt-navigation .button,.attempt-intro > .button { width: 100%; }
+  .submission-summary { align-items: flex-start; }
+}
