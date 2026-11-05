@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { buildApp, hash } from '../app.ts';
+import { revisionContentHash } from '../assessments.ts';
 import { readConfig } from '../config.ts';
 import { createDatabase } from '../db.ts';
 import { verifiedTestDatabase } from './test-database.ts';
@@ -13,6 +14,19 @@ const validContent = (expression = 'x**2', alternatives = ['2*x', 'x', '0', '1']
   statement: `Pregunta sintética sobre ${expression}`, alternatives, proposedAnswer: 0,
   explanation: 'Explicación sintética revisada por el docente.', difficulty: 'intermedia', topic: 'Derivadas sintéticas',
   operation: 'derivative', expression, reviewed: true, nodeId: null, materialId: null,
+});
+
+test('Hito 2: la huella de revisión es determinista e independiente de la evidencia matemática', () => {
+  const content = {
+    statement: 'Pregunta sintética sobre x**2', alternatives: [{ id: '11111111-1111-4111-8111-111111111111', text: '2*x' }],
+    explanation: 'Explicación sintética.', difficulty: 'intermedia', topic: 'Derivadas sintéticas', operation: 'derivative' as const,
+    expression: 'x**2', nodeId: null, materialId: null,
+  };
+  const correctOptionId = content.alternatives[0].id;
+  const before = revisionContentHash(content, correctOptionId);
+  const after = revisionContentHash(JSON.parse(JSON.stringify(content)), correctOptionId);
+  assert.equal(before, after);
+  assert.equal(before.length, 64);
 });
 
 test('PostgreSQL real: migración aditiva de evaluaciones admite rollback y reaplicación', { skip: !url && 'Falta DATABASE_TEST_URL', timeout: 30000 }, async () => {

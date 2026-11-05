@@ -28,6 +28,7 @@ function canonical(value: unknown): string {
   return JSON.stringify(value);
 }
 const digest = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex');
+export const revisionContentHash = (content: RevisionContent, correctOptionId: string) => digest({ content, correctOptionId });
 function stableOptionId(draftId: string, draftVersion: number, index: number, value: string) {
   const source = createHash('sha256').update(`${draftId}:${draftVersion}:${index}:${value}`).digest('hex').slice(0, 32).split('');
   source[12] = '5'; source[16] = ['8', '9', 'a', 'b'][Number.parseInt(source[16], 16) % 4];
@@ -146,7 +147,7 @@ export function registerAssessmentRoutes(app: FastifyInstance, db: Knex, teacher
       operation: draft.operation, expression: draft.expression, nodeId: draft.nodeId, materialId: draft.materialId,
     };
     const correctOptionId = alternatives[draft.proposedAnswer].id;
-    const contentHash = digest({ content, correctOptionId, verification });
+    const contentHash = revisionContentHash(content, correctOptionId);
     const row = await db.transaction(async tx => {
       await owner(request, request.params.id, tx);
       const current = await tx('question_drafts').where({ id: source.id, classroom_id: request.params.id, teacher_id: user.id, version: source.version }).whereNull('discarded_at').forUpdate().first();
