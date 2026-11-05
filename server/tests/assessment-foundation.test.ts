@@ -10,6 +10,7 @@ import { verifiedTestDatabase } from './test-database.ts';
 const url = process.env.DATABASE_TEST_URL;
 const migration = '202611030002_assessment_foundation.mjs';
 const publicationMigration = '202611040001_assessment_publication.mjs';
+const attemptsMigration = '202611040002_student_attempts.mjs';
 const validContent = (expression = 'x**2', alternatives = ['2*x', 'x', '0', '1']) => ({
   statement: `Pregunta sintética sobre ${expression}`, alternatives, proposedAnswer: 0,
   explanation: 'Explicación sintética revisada por el docente.', difficulty: 'intermedia', topic: 'Derivadas sintéticas',
@@ -36,6 +37,7 @@ test('PostgreSQL real: migración aditiva de evaluaciones admite rollback y reap
     assert.equal(await db.schema.hasTable('question_revisions'), true);
     assert.equal(await db.schema.hasTable('assessments'), true);
     assert.equal(await db.schema.hasTable('assessment_versions'), true);
+    await db.migrate.down({ name: attemptsMigration });
     await db.migrate.down({ name: publicationMigration });
     await db.migrate.down({ name: migration });
     assert.equal(await db.schema.hasTable('question_revisions'), false);
@@ -43,6 +45,7 @@ test('PostgreSQL real: migración aditiva de evaluaciones admite rollback y reap
     assert.equal(await db.schema.hasTable('question_drafts'), true);
     await db.migrate.up({ name: migration });
     await db.migrate.up({ name: publicationMigration });
+    await db.migrate.up({ name: attemptsMigration });
     assert.equal(await db.schema.hasTable('assessment_version_items'), true);
   } finally { await db.destroy(); }
 });
@@ -166,6 +169,7 @@ test('PostgreSQL real: revisiones inmutables y prácticas en borrador con aislam
     assert.ok(Number((await db('audit_events').where({ resource_id: assessmentId }).count('* as n').first())?.n) >= 5);
   } finally {
     if (app) await app.close();
+    await db.migrate.down({ name: attemptsMigration });
     await db.migrate.down({ name: publicationMigration });
     await db.migrate.down({ name: migration });
     await db.transaction(async tx => {
@@ -183,6 +187,7 @@ test('PostgreSQL real: revisiones inmutables y prácticas en borrador con aislam
     });
     await db.migrate.up({ name: migration });
     await db.migrate.up({ name: publicationMigration });
+    await db.migrate.up({ name: attemptsMigration });
     assert.equal(Number((await db('users').count('* as n').first())?.n), baseline.users);
     assert.equal(Number((await db('enrollments').count('* as n').first())?.n), baseline.enrollments);
     assert.equal(Number((await db('question_drafts').count('* as n').first())?.n), baseline.drafts);
