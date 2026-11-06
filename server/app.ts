@@ -13,6 +13,7 @@ import { registerPlanningRoutes } from './planning.ts';
 import { registerPlanningReviewRoutes } from './planning-review.ts';
 import { registerAssessmentRoutes } from './assessments.ts';
 import { registerAttemptRoutes } from './attempts.ts';
+import { registerResultRoutes } from './results.ts';
 
 export const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const random = () => randomBytes(32).toString('base64url');
@@ -299,5 +300,6 @@ export async function buildApp(config: Config, db: Knex, exchange = exchangeGoog
   registerPlanningReviewRoutes(app,db,teacher);
   registerAssessmentRoutes(app,db,teacher);
   registerAttemptRoutes(app,db,principal);
+  registerResultRoutes(app,db,principal,teacher);
   return app;
 }
