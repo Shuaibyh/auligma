@@ -141,7 +141,9 @@ export async function buildApp(config: Config, db: Knex, exchange = exchangeGoog
         : new OAuthDiagnosticError('CALLBACK_UNKNOWN', 'OAUTH_UNCLASSIFIED_FAILURE');
       app.log.warn({ event: 'oauth_callback_failed', correlationId, stage: diagnostic.stage, diagnosticCode: diagnostic.diagnosticCode,
         ...diagnostic.details, configurationPresent: configured, databaseReached, identityPersisted, sessionCreated }, 'OAuth no completado');
-      const code = error instanceof ApiError ? error.code : 'authentication_failed';
+      const code = error instanceof ApiError ? error.code
+        : diagnostic.diagnosticCode === 'TOKEN_ENDPOINT_UNREACHABLE' ? 'google_unreachable'
+        : 'authentication_failed';
       return reply.redirect(`${config.frontendUrl}/login?error=${code}&reference=${correlationId}`);
     }
   });

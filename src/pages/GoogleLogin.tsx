@@ -8,6 +8,7 @@ const messages: Record<string,string> = {
   google_not_configured: 'El acceso con Google todavía no está disponible. Vuelve a intentarlo más tarde.',
   cancelled: 'Cancelaste el inicio de sesión. Puedes intentarlo cuando quieras.',
   authentication_failed: 'No pudimos verificar tu cuenta. Vuelve a iniciar sesión con Google.',
+  google_unreachable: 'AULIGMA no pudo contactar con Google. Comprueba la conexión del backend e inténtalo nuevamente.',
   account_not_authorized: 'Esta cuenta no tiene autorización. Usa tu cuenta institucional o consulta tu autorización docente.',
   backend_unavailable: 'No podemos conectar con AULIGMA. Inténtalo nuevamente.',
 };

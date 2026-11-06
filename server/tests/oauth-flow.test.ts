@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import type { Knex } from 'knex';
 import { buildApp } from '../app.ts';
 import { readConfig } from '../config.ts';
+import { OAuthDiagnosticError } from '../google.ts';
 
 test('OAuth con almacén simulado: PKCE, cookie, correlación, consumo único y límite', async () => {
   type Attempt = {state_hash:string;browser_hash:string;nonce:string;verifier:string;expires_at:Date};
@@ -32,7 +33,7 @@ test('OAuth con almacén simulado: PKCE, cookie, correlación, consumo único y 
   const app = await buildApp(config,db,async (_code,verifier,nonce) => {
     exchanges++;
     assert.equal(verifier.length,43); assert.equal(nonce.length,43);
-    throw new Error('Proveedor simulado rechaza el código');
+    throw new OAuthDiagnosticError('TOKEN_EXCHANGE','TOKEN_ENDPOINT_UNREACHABLE',{networkCode:'EACCES'});
   });
   try {
     const start = await app.inject('/api/v1/auth/google/start');
@@ -48,7 +49,7 @@ test('OAuth con almacén simulado: PKCE, cookie, correlación, consumo único y 
     await app.inject(`/api/v1/auth/google/callback?state=${state}&code=synthetic`);
     assert.equal(exchanges,0); assert.equal(attempts.length,1);
     const callback = await app.inject({url:`/api/v1/auth/google/callback?state=${state}&code=synthetic`,headers:{cookie}});
-    assert.match(callback.headers.location!,/authentication_failed/);
+    assert.match(callback.headers.location!,/google_unreachable/);
     assert.match(callback.headers.location!,/reference=[0-9a-f-]{36}/);
     assert.doesNotMatch(callback.headers.location!,/Proveedor|synthetic-secret|synthetic-code/);
     assert.equal(exchanges,1); assert.equal(attempts.length,0);
