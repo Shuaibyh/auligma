@@ -9,6 +9,7 @@ const url = process.env.DATABASE_TEST_URL;
 const foundationMigration = '202611030002_assessment_foundation.mjs';
 const publicationMigration = '202611040001_assessment_publication.mjs';
 const attemptsMigration = '202611040002_student_attempts.mjs';
+const gradingMigration = '202611050001_attempt_grading.mjs';
 
 test('Hito 3: publicación transaccional, inmutable, aislada e idempotente', { skip: !url && 'Falta DATABASE_TEST_URL', timeout: 180000 }, async () => {
   const db = await verifiedTestDatabase(url);
@@ -134,6 +135,7 @@ test('Hito 3: publicación transaccional, inmutable, aislada e idempotente', { s
     assert.equal(Number((await db('assessment_versions').where({ assessment_id: validId }).count('* as n').first())?.n), 1);
   } finally {
     if (app) await app.close();
+    await db.migrate.down({ name: gradingMigration });
     await db.migrate.down({ name: attemptsMigration });
     await db.migrate.down({ name: publicationMigration });
     await db.migrate.down({ name: foundationMigration });
@@ -152,6 +154,7 @@ test('Hito 3: publicación transaccional, inmutable, aislada e idempotente', { s
     await db.migrate.up({ name: foundationMigration });
     await db.migrate.up({ name: publicationMigration });
     await db.migrate.up({ name: attemptsMigration });
+    await db.migrate.up({ name: gradingMigration });
     await db.destroy();
   }
 });
