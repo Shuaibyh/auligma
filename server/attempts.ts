@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Knex } from 'knex';
 import type { Principal } from './enrollments.ts';
 import { ApiError } from './identity.ts';
+import { gradeSubmittedAttempt } from './grading.ts';
 
 type PrincipalGuard = (request: FastifyRequest) => Promise<Principal>;
 type RevisionContent = { statement?: string; alternatives?: { id: string; text: string }[]; difficulty?: string; topic?: string };
@@ -45,7 +46,7 @@ export function registerAttemptRoutes(app: FastifyInstance, db: Knex, principal:
     if (row.assessment_status === 'closed') return 'closed';
     if (row.opens_at && new Date(String(row.opens_at)) > now) return 'upcoming';
     if (row.closes_at && new Date(String(row.closes_at)) <= now) return 'closed';
-    if (row.attempt_status === 'submitted') return 'submitted';
+    if (['submitted', 'grading', 'graded'].includes(String(row.attempt_status))) return 'submitted';
     if (row.attempt_status === 'expired') return 'expired';
     if (row.attempt_status === 'in_progress') return effectiveStatus({ status: row.attempt_status, expires_at: row.expires_at }, now) === 'expired' ? 'expired' : 'in_progress';
     return row.assessment_status === 'published' ? 'available' : 'closed';
@@ -247,7 +248,10 @@ export function registerAttemptRoutes(app: FastifyInstance, db: Knex, principal:
       await activeEnrollment(tx, request.params.id, user.id, true);
       const attempt = await ownedAttempt(tx, request.params.id, request.params.attemptId, user.id, true);
       const now = await databaseNow(tx);
-      if (attempt.status === 'submitted') return { attempt } as const;
+      if (['submitted', 'grading', 'graded'].includes(String(attempt.status))) {
+        if (attempt.submission_key !== request.body.operationId) throw new ApiError(409, 'attempt_finished', 'El intento ya fue entregado.');
+        return { attempt } as const;
+      }
       if (await expireIfNeeded(tx, attempt, now)) return { expired: true } as const;
       if (attempt.status !== 'in_progress') throw new ApiError(409, 'attempt_finished', 'El intento ya no puede enviarse.');
       if (Number(attempt.version) !== request.body.version) throw new ApiError(409, 'version_conflict', 'Hay respuestas mÃ¡s recientes. Recarga antes de enviar.');
@@ -259,7 +263,8 @@ export function registerAttemptRoutes(app: FastifyInstance, db: Knex, principal:
       return { attempt: submitted } as const;
     });
     if ('expired' in result) throw new ApiError(409, 'attempt_expired', 'El plazo del intento terminÃ³ antes del envÃ­o.');
-    return attemptDto(db, result.attempt);
+    if (result.attempt.status !== 'graded') await gradeSubmittedAttempt(db, String(result.attempt.id));
+    return attemptDto(db, await ownedAttempt(db, request.params.id, request.params.attemptId, user.id));
   });
 
   app.get<{ Params: { id: string; attemptId: string } }>(base + '/attempts/:attemptId/status', {
