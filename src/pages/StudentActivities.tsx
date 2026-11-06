@@ -20,6 +20,12 @@ type Attempt = {
   status: string; version: number; startedAt: string; expiresAt: string | null; submittedAt: string | null;
   serverNow: string; questions: Question[]; answeredCount: number;
 };
+type StudentResult = {
+  id: string; state: 'pending' | 'review_required' | 'withheld' | 'available' | 'expired' | 'invalidated';
+  scoreReleased: boolean; solutionsReleased: boolean; score?: number; maxScore?: number; gradedAt?: string;
+  items?: { id: string; position: number; statement: string; pointsAwarded: number; maxPoints: number; outcome: string;
+    selectedOptionId: string | null; alternatives: { id: string; text: string }[]; correctOptionId: string; explanation: string }[];
+};
 
 const labels: Record<ActivityState, string> = {
   upcoming: 'Próxima', available: 'Disponible', in_progress: 'En progreso', submitted: 'Entregada', expired: 'Vencida', closed: 'Cerrada',
@@ -106,10 +112,17 @@ export function StudentAttempt() {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [submitOpen, setSubmitOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<StudentResult | null>(null);
   const operationRef = useRef<string | null>(null);
   const countdown = useCountdown(attempt?.serverNow, attempt?.expiresAt);
   const load = async () => { const result = await api<Attempt>(`/classrooms/${id}/attempts/${attemptId}`); setAttempt(result); return result; };
   useEffect(() => { let active = true; api<Attempt>(`/classrooms/${id}/attempts/${attemptId}`).then(result => { if (active) setAttempt(result); }).catch(failure => { if (active) setError((failure as Error).message); }); return () => { active = false; }; }, [id, attemptId]);
+  useEffect(() => {
+    if (!attempt || !['submitted', 'grading', 'graded'].includes(attempt.status)) return;
+    let active = true;
+    api<StudentResult>(`/classrooms/${id}/attempts/${attemptId}/result`).then(value => { if (active) setResult(value); }).catch(failure => { if (active) setError((failure as Error).message); });
+    return () => { active = false; };
+  }, [attempt, attemptId, id]);
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => { if (saveState === 'saving') event.preventDefault(); };
     window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
@@ -134,14 +147,22 @@ export function StudentAttempt() {
     } catch (failure) {
       try {
         const status = await api<{ status: string }>(`/classrooms/${id}/attempts/${attempt.id}/status`);
-        if (status.status === 'submitted') { await load(); setSubmitOpen(false); operationRef.current = null; return; }
+        if (['submitted', 'grading', 'graded'].includes(status.status)) { await load(); setSubmitOpen(false); operationRef.current = null; return; }
       } catch { /* Se conserva el error original y la clave para reintento idempotente. */ }
       setError((failure as Error).message);
     } finally { setSubmitting(false); }
   }
   if (!attempt && !error) return <p role="status">Recuperando tu intento…</p>;
   if (!attempt) return <section className="panel"><EmptyState title="No pudimos abrir el intento">{error}</EmptyState></section>;
-  if (attempt.status === 'submitted') return <StudentOnly><section className="panel submission-receipt"><CheckCircle2 aria-hidden="true" /><p className="eyebrow">ENTREGA REGISTRADA</p><h1>{attempt.title}</h1><p>Tu envío fue recibido el {date(attempt.submittedAt)}.</p><p className="muted">AULIGMA no muestra calificación ni retroalimentación en este hito.</p><Link className="button primary" to={`/estudiante/cursos/${id}/actividades`}>Volver a actividades</Link></section></StudentOnly>;
+  if (['submitted', 'grading', 'graded'].includes(attempt.status)) return <StudentOnly><section className="panel submission-receipt result-receipt"><CheckCircle2 aria-hidden="true" /><p className="eyebrow">ENTREGA REGISTRADA</p><h1>{attempt.title}</h1><p>Tu entrega fue recibida el {date(attempt.submittedAt)}.</p>
+    {!result && !error && <p role="status">Consultando el estado de corrección…</p>}
+    {error && <p className="error" role="alert">{error}</p>}
+    {result?.state === 'review_required' && <div className="notice amber"><AlertTriangle aria-hidden="true" /><p>La verificación matemática no fue concluyente. Tu resultado está pendiente de revisión docente.</p></div>}
+    {result?.state === 'withheld' && <p className="muted">La corrección terminó. El puntaje se mostrará cuando cierre la actividad.</p>}
+    {result?.state === 'pending' && <p className="muted">La corrección sigue en proceso. Puedes volver más tarde.</p>}
+    {result?.state === 'available' && <><div className="student-score" aria-label={`Puntaje ${result.score} de ${result.maxScore}`}><strong>{result.score}</strong><span>/ {result.maxScore} puntos</span></div>
+      {result.solutionsReleased && result.items && <div className="student-result-items">{result.items.map(item => <article key={item.id}><header><strong>Pregunta {item.position}</strong><Badge tone={item.outcome === 'correct' ? 'green' : ''}>{item.pointsAwarded} / {item.maxPoints}</Badge></header><p>{item.statement}</p><p className="small muted">{item.explanation || 'Sin explicación publicada.'}</p></article>)}</div>}</>}
+    <Link className="button primary" to={`/estudiante/cursos/${id}/actividades`}>Volver a actividades</Link></section></StudentOnly>;
   const question = attempt.questions[index]; const pending = attempt.questions.length - attempt.answeredCount;
   return <StudentOnly><div className="attempt-workspace">
     <header className="attempt-header"><div><p className="eyebrow">INTENTO EN CURSO</p><h1>{attempt.title}</h1></div><div className="attempt-status"><span className={`autosave-status ${saveState}`} aria-live="polite">{saveState === 'saving' ? <><Save size={16} /> Guardando…</> : saveState === 'error' ? 'No guardado' : <><CheckCircle2 size={16} /> Guardado</>}</span><span className="attempt-timer"><Clock3 size={17} aria-hidden="true" />{countdown}</span></div></header>
