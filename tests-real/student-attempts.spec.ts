@@ -34,6 +34,7 @@ async function mockAttemptApi(page: Page) {
   await page.route(`**/api/v1/classrooms/${classroomId}/attempts/${attemptId}**`, async route => {
     const request = route.request(); const path = new URL(request.url()).pathname;
     if (request.method() === 'GET' && path.endsWith('/status')) return route.fulfill({ json: { id: attemptId, status, version, submittedAt, expiresAt: activity.closesAt, serverNow: now } });
+    if (request.method() === 'GET' && path.endsWith('/result')) return route.fulfill({ json: { id: attemptId, state: 'pending', scoreReleased: false, solutionsReleased: false } });
     if (request.method() === 'GET') return route.fulfill({ json: attempt() });
     expect(request.headers()['x-csrf-token']).toBe('student-h4-csrf');
     if (request.method() === 'PATCH') { const body = request.postDataJSON(); const itemId = path.split('/answers/')[1]; answers[itemId] = body.selectedOptionId; version++; return route.fulfill({ json: attempt() }); }
@@ -62,7 +63,7 @@ test('Hito 4: lista, inicia, autoguarda, recupera y entrega un intento', async (
   await page.getByRole('button', { name: 'Confirmar entrega' }).click();
   await expect(page.getByRole('heading', { name: 'Práctica de derivadas' })).toBeVisible();
   await expect(page.getByText('ENTREGA REGISTRADA')).toBeVisible();
-  await expect(page.getByText(/calificación ni retroalimentación/)).toBeVisible();
+  await expect(page.getByText(/corrección sigue en proceso/)).toBeVisible();
 });
 
 for (const width of [390, 768, 1024, 1440]) test(`Hito 4: intento accesible y responsive a ${width}px`, async ({ page }) => {
