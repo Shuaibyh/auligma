@@ -1374,15 +1374,13 @@ progress::-moz-progress-bar {
   clip-path: none;
 }
 .main-content {
-  animation: appear 260ms ease-out;
+  animation: appear 200ms ease-out;
 }
 @keyframes appear {
   from {
-    opacity: 0;
     transform: translateY(5px);
   }
   to {
-    opacity: 1;
     transform: none;
   }
 }
