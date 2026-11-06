@@ -7,6 +7,7 @@ import { verifiedTestDatabase } from './test-database.ts';
 
 const url = process.env.DATABASE_TEST_URL;
 const migration = '202611040002_student_attempts.mjs';
+const gradingMigration = '202611050001_attempt_grading.mjs';
 const publicationMigration = '202611040001_assessment_publication.mjs';
 const foundationMigration = '202611030002_assessment_foundation.mjs';
 
@@ -98,10 +99,10 @@ test('Hito 4: intento estudiantil aislado, versionado, idempotente y sin solucio
     const submitOperation = randomUUID();
     const submitted = await app.inject({ method: 'POST', url: `/api/v1/classrooms/${ids.classroom}/attempts/${attempt.id}/submit`, headers: headers(token),
       payload: { version: saved.json().version, operationId: submitOperation, confirmed: true } });
-    assert.equal(submitted.statusCode, 200, submitted.body); assert.equal(submitted.json().status, 'submitted');
+    assert.equal(submitted.statusCode, 200, submitted.body); assert.equal(submitted.json().status, 'graded');
     const submitRetry = await app.inject({ method: 'POST', url: `/api/v1/classrooms/${ids.classroom}/attempts/${attempt.id}/submit`, headers: headers(token),
       payload: { version: saved.json().version, operationId: submitOperation, confirmed: true } });
-    assert.equal(submitRetry.statusCode, 200, submitRetry.body); assert.equal(submitRetry.json().status, 'submitted');
+    assert.equal(submitRetry.statusCode, 200, submitRetry.body); assert.equal(submitRetry.json().status, 'graded');
     assert.equal((await app.inject({ method: 'POST', url: `${activity}/attempts`, headers: headers(token), payload: { operationId: randomUUID() } })).statusCode, 409);
     assert.equal((await app.inject({ method: 'PATCH', url: `/api/v1/classrooms/${ids.classroom}/attempts/${attempt.id}/answers/${itemId}`,
       headers: headers(token), payload: { version: submitted.json().version, operationId: randomUUID(), selectedOptionId: optionB } })).statusCode, 409);
@@ -110,6 +111,7 @@ test('Hito 4: intento estudiantil aislado, versionado, idempotente y sin solucio
     assert.equal(Number((await db('audit_events').where({ resource_id: attempt.id, action: 'attempt.submitted' }).count('* as n').first())?.n), 1);
   } finally {
     if (app) await app.close();
+    await db.migrate.down({ name: gradingMigration });
     await db.migrate.down({ name: migration });
     await db.migrate.down({ name: publicationMigration });
     await db.migrate.down({ name: foundationMigration });
@@ -124,6 +126,6 @@ test('Hito 4: intento estudiantil aislado, versionado, idempotente y sin solucio
     });
     await db.migrate.up({ name: foundationMigration });
     await db.migrate.up({ name: publicationMigration });
-    await db.migrate.up({ name: migration }); await db.destroy();
+    await db.migrate.up({ name: migration }); await db.migrate.up({ name: gradingMigration }); await db.destroy();
   }
 });
