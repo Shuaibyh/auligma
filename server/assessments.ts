@@ -20,6 +20,7 @@ const params = (extra: Record<string, unknown> = {}) => ({ type: 'object', addit
 const text = (maxLength: number, minLength = 0) => ({ type: 'string', minLength, maxLength });
 const version = { type: 'integer', minimum: 1 };
 const points = { type: 'number', exclusiveMinimum: 0, maximum: 1000, multipleOf: 0.01 };
+const availabilityDate = { anyOf: [{ type: 'string', format: 'date-time', pattern: '(?:Z|[+-]\\d{2}:\\d{2})$' }, { type: 'null' }] };
 
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
@@ -27,6 +28,7 @@ function canonical(value: unknown): string {
   return JSON.stringify(value);
 }
 const digest = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex');
+export const revisionContentHash = (content: RevisionContent, correctOptionId: string) => digest({ content, correctOptionId });
 function stableOptionId(draftId: string, draftVersion: number, index: number, value: string) {
   const source = createHash('sha256').update(`${draftId}:${draftVersion}:${index}:${value}`).digest('hex').slice(0, 32).split('');
   source[12] = '5'; source[16] = ['8', '9', 'a', 'b'][Number.parseInt(source[16], 16) % 4];
@@ -72,8 +74,41 @@ export function registerAssessmentRoutes(app: FastifyInstance, db: Knex, teacher
         questionRevision: item.question_revision, reviewStatus: item.review_status, content: item.content,
         correctOptionId: item.correct_option_id, verification: item.verification,
       })),
-      publicationAllowed: false,
+      publicationAllowed: assessment.status === 'draft' && items.length > 0
+        && items.every((item, index) => item.review_status === 'approved' && item.position === index + 1 && Number(item.points) > 0),
     };
+  }
+
+  async function versionDto(connection: Knex, snapshot: Record<string, unknown>) {
+    const items = await connection('assessment_version_items as i').join('question_revisions as q', 'q.id', 'i.question_revision_id')
+      .where({ 'i.assessment_version_id': snapshot.id }).orderBy('i.position')
+      .select('i.id', 'i.position', 'i.points', 'i.settings', 'q.id as question_revision_id', 'q.revision as question_revision',
+        'q.content', 'q.correct_option_id', 'q.review_status', 'q.verification');
+    const settings = snapshot.settings as Record<string, unknown>;
+    return {
+      id: snapshot.id, assessmentId: snapshot.assessment_id, classroomId: snapshot.classroom_id,
+      revision: snapshot.revision, sourceVersion: snapshot.source_version, title: settings.title,
+      instructions: settings.instructions, type: settings.type, totalPoints: Number(snapshot.total_points),
+      contentHash: snapshot.content_hash, opensAt: snapshot.opens_at, dueAt: snapshot.due_at,
+      closesAt: snapshot.closes_at, publishedAt: snapshot.published_at,
+      scoreReleasePolicy: snapshot.score_release_policy, solutionReleasePolicy: snapshot.solution_release_policy,
+      items: items.map(item => ({
+        id: item.id, position: item.position, points: Number(item.points), settings: item.settings,
+        questionRevisionId: item.question_revision_id, questionRevision: item.question_revision,
+        reviewStatus: item.review_status, content: item.content, correctOptionId: item.correct_option_id,
+        verification: item.verification,
+      })),
+    };
+  }
+
+  function availability(body: { opensAt: string | null; dueAt: string | null; closesAt: string | null }) {
+    const parsed = { opensAt: body.opensAt ? new Date(body.opensAt) : null, dueAt: body.dueAt ? new Date(body.dueAt) : null, closesAt: body.closesAt ? new Date(body.closesAt) : null };
+    if ((parsed.opensAt && parsed.dueAt && parsed.opensAt >= parsed.dueAt)
+      || (parsed.opensAt && parsed.closesAt && parsed.opensAt >= parsed.closesAt)
+      || (parsed.dueAt && parsed.closesAt && parsed.dueAt > parsed.closesAt)) {
+      throw new ApiError(400, 'invalid_availability', 'La apertura debe preceder al vencimiento y al cierre; el vencimiento no puede superar el cierre.');
+    }
+    return parsed;
   }
 
   async function lockedAssessment(tx: Knex.Transaction, userId: string, classroomId: string, assessmentId: string, expectedVersion: number) {
@@ -113,7 +148,7 @@ export function registerAssessmentRoutes(app: FastifyInstance, db: Knex, teacher
       operation: draft.operation, expression: draft.expression, nodeId: draft.nodeId, materialId: draft.materialId,
     };
     const correctOptionId = alternatives[draft.proposedAnswer].id;
-    const contentHash = digest({ content, correctOptionId, verification });
+    const contentHash = revisionContentHash(content, correctOptionId);
     const row = await db.transaction(async tx => {
       await owner(request, request.params.id, tx);
       const current = await tx('question_drafts').where({ id: source.id, classroom_id: request.params.id, teacher_id: user.id, version: source.version }).whereNull('discarded_at').forUpdate().first();
@@ -269,6 +304,99 @@ export function registerAssessmentRoutes(app: FastifyInstance, db: Knex, teacher
       await tx('audit_events').insert({ id: randomUUID(), actor_id: user.id, action: 'assessment.item_removed', resource_id: assessment.id,
         resource_type: 'assessment', details: { itemId: item.id } });
       return updated;
+    });
+    return assessmentDto(db, row);
+  });
+
+  app.post<{ Params: { id: string; assessmentId: string }; Body: { version: number; confirmed: boolean; opensAt: string | null; dueAt: string | null; closesAt: string | null; scoreReleasePolicy?: 'immediate' | 'after_close'; solutionReleasePolicy?: 'never' | 'after_close' } }>(assessmentBase + '/:assessmentId/publish', {
+    schema: { params: params({ assessmentId: uuid }), body: { type: 'object', additionalProperties: false,
+      required: ['version', 'confirmed', 'opensAt', 'dueAt', 'closesAt'], properties: { version, confirmed: { type: 'boolean', const: true }, opensAt: availabilityDate, dueAt: availabilityDate, closesAt: availabilityDate,
+        scoreReleasePolicy: { type: 'string', enum: ['immediate', 'after_close'] }, solutionReleasePolicy: { type: 'string', enum: ['never', 'after_close'] } } } },
+  }, async request => {
+    const user = await owner(request, request.params.id);
+    const dates = availability(request.body);
+    const scoreReleasePolicy = request.body.scoreReleasePolicy || 'after_close';
+    const solutionReleasePolicy = request.body.solutionReleasePolicy || 'never';
+    const snapshot = await db.transaction(async tx => {
+      await owner(request, request.params.id, tx);
+      const assessment = await tx('assessments').where({ id: request.params.assessmentId, classroom_id: request.params.id, teacher_id: user.id }).forUpdate().first();
+      if (!assessment) throw new ApiError(404, 'not_found', 'Práctica no disponible.');
+      if (assessment.status !== 'draft') {
+        const existing = await tx('assessment_versions').where({ assessment_id: assessment.id, source_version: request.body.version }).first();
+        const sameDates = existing
+          && (existing.opens_at ? new Date(existing.opens_at).toISOString() : null) === (dates.opensAt?.toISOString() ?? null)
+          && (existing.due_at ? new Date(existing.due_at).toISOString() : null) === (dates.dueAt?.toISOString() ?? null)
+          && (existing.closes_at ? new Date(existing.closes_at).toISOString() : null) === (dates.closesAt?.toISOString() ?? null)
+          && existing.score_release_policy === scoreReleasePolicy && existing.solution_release_policy === solutionReleasePolicy;
+        if (sameDates) return existing;
+        throw new ApiError(409, 'already_published', 'La práctica ya fue publicada con otra versión o disponibilidad.');
+      }
+      if (assessment.version !== request.body.version) throw new ApiError(409, 'version_conflict', 'La práctica cambió. Vuelve a consultarla antes de publicar.');
+      const items = await tx('assessment_items as i').join('question_revisions as q', 'q.id', 'i.question_revision_id')
+        .where({ 'i.assessment_id': assessment.id, 'i.classroom_id': request.params.id }).orderBy('i.position').forShare()
+        .select('i.id', 'i.position', 'i.points', 'q.id as question_revision_id', 'q.review_status', 'q.content_hash');
+      if (!items.length) throw new ApiError(409, 'assessment_empty', 'Añade al menos una pregunta antes de publicar.');
+      if (items.some((item, index) => item.position !== index + 1)) throw new ApiError(409, 'invalid_positions', 'Las preguntas deben ocupar posiciones consecutivas.');
+      if (items.some(item => !Number.isFinite(Number(item.points)) || Number(item.points) <= 0)) throw new ApiError(409, 'invalid_points', 'Todas las preguntas deben tener un puntaje positivo.');
+      if (items.some(item => item.review_status !== 'approved')) throw new ApiError(409, 'approved_question_required', 'Todas las preguntas deben conservar una revisión aprobada.');
+      const totalPoints = items.reduce((sum, item) => sum + Number(item.points), 0);
+      const settings = { title: assessment.title, instructions: assessment.instructions, type: assessment.type };
+      const contentHash = digest({ assessmentId: assessment.id, sourceVersion: assessment.version, settings,
+        opensAt: dates.opensAt?.toISOString() ?? null, dueAt: dates.dueAt?.toISOString() ?? null, closesAt: dates.closesAt?.toISOString() ?? null,
+        scoreReleasePolicy, solutionReleasePolicy,
+        items: items.map(item => ({ questionRevisionId: item.question_revision_id, contentHash: item.content_hash, position: item.position, points: Number(item.points) })) });
+      const last = await tx('assessment_versions').where({ assessment_id: assessment.id }).max<{ max: string | number | null }>('revision as max').first();
+      const [created] = await tx('assessment_versions').insert({ id: randomUUID(), assessment_id: assessment.id, classroom_id: request.params.id,
+        revision: Number(last?.max || 0) + 1, source_version: assessment.version, settings: JSON.stringify(settings), total_points: totalPoints,
+        content_hash: contentHash, opens_at: dates.opensAt, due_at: dates.dueAt, closes_at: dates.closesAt,
+        score_release_policy: scoreReleasePolicy, solution_release_policy: solutionReleasePolicy,
+        published_by: user.id, published_at: tx.fn.now() }).returning('*');
+      await tx('assessment_version_items').insert(items.map(item => ({ id: randomUUID(), assessment_version_id: created.id, classroom_id: request.params.id,
+        question_revision_id: item.question_revision_id, position: item.position, points: item.points, settings: '{}' })));
+      await tx('assessments').where({ id: assessment.id }).update({ status: 'published', version: assessment.version + 1, updated_at: tx.fn.now() });
+      await tx('audit_events').insert({ id: randomUUID(), actor_id: user.id, action: 'assessment.published', resource_id: assessment.id,
+        resource_type: 'assessment', details: { assessmentVersionId: created.id, revision: created.revision, sourceVersion: assessment.version, contentHash } });
+      return created;
+    });
+    return versionDto(db, snapshot);
+  });
+
+  app.get<{ Params: { id: string; assessmentId: string } }>(assessmentBase + '/:assessmentId/versions', {
+    schema: { params: params({ assessmentId: uuid }) },
+  }, async request => {
+    const user = await owner(request, request.params.id);
+    const assessment = await db('assessments').where({ id: request.params.assessmentId, classroom_id: request.params.id, teacher_id: user.id }).first();
+    if (!assessment) throw new ApiError(404, 'not_found', 'Práctica no disponible.');
+    const rows = await db('assessment_versions').where({ assessment_id: assessment.id, classroom_id: request.params.id }).orderBy('revision', 'desc');
+    return Promise.all(rows.map(row => versionDto(db, row)));
+  });
+
+  app.get<{ Params: { id: string; assessmentId: string; versionId: string } }>(assessmentBase + '/:assessmentId/versions/:versionId/preview', {
+    schema: { params: params({ assessmentId: uuid, versionId: uuid }) },
+  }, async request => {
+    const user = await owner(request, request.params.id);
+    const assessment = await db('assessments').where({ id: request.params.assessmentId, classroom_id: request.params.id, teacher_id: user.id }).first();
+    if (!assessment) throw new ApiError(404, 'not_found', 'Práctica no disponible.');
+    const snapshot = await db('assessment_versions').where({ id: request.params.versionId, assessment_id: assessment.id, classroom_id: request.params.id }).first();
+    if (!snapshot) throw new ApiError(404, 'not_found', 'Versión publicada no disponible.');
+    return versionDto(db, snapshot);
+  });
+
+  app.post<{ Params: { id: string; assessmentId: string }; Body: { version: number; confirmed: boolean } }>(assessmentBase + '/:assessmentId/close', {
+    schema: { params: params({ assessmentId: uuid }), body: { type: 'object', additionalProperties: false, required: ['version', 'confirmed'], properties: { version, confirmed: { type: 'boolean', const: true } } } },
+  }, async request => {
+    const user = await owner(request, request.params.id);
+    const row = await db.transaction(async tx => {
+      await owner(request, request.params.id, tx);
+      const assessment = await tx('assessments').where({ id: request.params.assessmentId, classroom_id: request.params.id, teacher_id: user.id }).forUpdate().first();
+      if (!assessment) throw new ApiError(404, 'not_found', 'Práctica no disponible.');
+      if (assessment.status === 'closed' && assessment.version === request.body.version + 1) return assessment;
+      if (assessment.status !== 'published') throw new ApiError(409, 'assessment_not_published', 'Solo una práctica publicada puede cerrarse.');
+      if (assessment.version !== request.body.version) throw new ApiError(409, 'version_conflict', 'La práctica cambió. Vuelve a consultarla antes de cerrar.');
+      const [closed] = await tx('assessments').where({ id: assessment.id }).update({ status: 'closed', version: assessment.version + 1, updated_at: tx.fn.now() }).returning('*');
+      await tx('audit_events').insert({ id: randomUUID(), actor_id: user.id, action: 'assessment.closed', resource_id: assessment.id,
+        resource_type: 'assessment', details: { version: closed.version } });
+      return closed;
     });
     return assessmentDto(db, row);
   });

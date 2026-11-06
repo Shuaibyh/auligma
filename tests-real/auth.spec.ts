@@ -35,7 +35,7 @@ test('API simulada: backend no disponible y errores Google', async ({page}) => {
   await page.route('**/api/v1/**',route => route.abort());
   await page.goto('/login'); await expect(page.getByRole('alert')).toContainText('No podemos conectar');
   await expect(page.getByRole('button',{name:'Volver a intentar'})).toBeVisible();
-  for (const [code,message] of [['cancelled','Cancelaste'],['authentication_failed','No pudimos verificar'],['account_not_authorized','no tiene autorización']]) {
+  for (const [code,message] of [['cancelled','Cancelaste'],['authentication_failed','No pudimos verificar'],['google_unreachable','no pudo contactar con Google'],['account_not_authorized','no tiene autorización']]) {
     await page.goto(`/login?error=${code}`); await expect(page.getByRole('alert')).toContainText(message);
   }
 });
