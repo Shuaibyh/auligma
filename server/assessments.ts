@@ -91,6 +91,7 @@ export function registerAssessmentRoutes(app: FastifyInstance, db: Knex, teacher
       instructions: settings.instructions, type: settings.type, totalPoints: Number(snapshot.total_points),
       contentHash: snapshot.content_hash, opensAt: snapshot.opens_at, dueAt: snapshot.due_at,
       closesAt: snapshot.closes_at, publishedAt: snapshot.published_at,
+      scoreReleasePolicy: snapshot.score_release_policy, solutionReleasePolicy: snapshot.solution_release_policy,
       items: items.map(item => ({
         id: item.id, position: item.position, points: Number(item.points), settings: item.settings,
         questionRevisionId: item.question_revision_id, questionRevision: item.question_revision,
@@ -307,12 +308,15 @@ export function registerAssessmentRoutes(app: FastifyInstance, db: Knex, teacher
     return assessmentDto(db, row);
   });
 
-  app.post<{ Params: { id: string; assessmentId: string }; Body: { version: number; confirmed: boolean; opensAt: string | null; dueAt: string | null; closesAt: string | null } }>(assessmentBase + '/:assessmentId/publish', {
+  app.post<{ Params: { id: string; assessmentId: string }; Body: { version: number; confirmed: boolean; opensAt: string | null; dueAt: string | null; closesAt: string | null; scoreReleasePolicy?: 'immediate' | 'after_close'; solutionReleasePolicy?: 'never' | 'after_close' } }>(assessmentBase + '/:assessmentId/publish', {
     schema: { params: params({ assessmentId: uuid }), body: { type: 'object', additionalProperties: false,
-      required: ['version', 'confirmed', 'opensAt', 'dueAt', 'closesAt'], properties: { version, confirmed: { type: 'boolean', const: true }, opensAt: availabilityDate, dueAt: availabilityDate, closesAt: availabilityDate } } },
+      required: ['version', 'confirmed', 'opensAt', 'dueAt', 'closesAt'], properties: { version, confirmed: { type: 'boolean', const: true }, opensAt: availabilityDate, dueAt: availabilityDate, closesAt: availabilityDate,
+        scoreReleasePolicy: { type: 'string', enum: ['immediate', 'after_close'] }, solutionReleasePolicy: { type: 'string', enum: ['never', 'after_close'] } } } },
   }, async request => {
     const user = await owner(request, request.params.id);
     const dates = availability(request.body);
+    const scoreReleasePolicy = request.body.scoreReleasePolicy || 'after_close';
+    const solutionReleasePolicy = request.body.solutionReleasePolicy || 'never';
     const snapshot = await db.transaction(async tx => {
       await owner(request, request.params.id, tx);
       const assessment = await tx('assessments').where({ id: request.params.assessmentId, classroom_id: request.params.id, teacher_id: user.id }).forUpdate().first();
@@ -322,7 +326,8 @@ export function registerAssessmentRoutes(app: FastifyInstance, db: Knex, teacher
         const sameDates = existing
           && (existing.opens_at ? new Date(existing.opens_at).toISOString() : null) === (dates.opensAt?.toISOString() ?? null)
           && (existing.due_at ? new Date(existing.due_at).toISOString() : null) === (dates.dueAt?.toISOString() ?? null)
-          && (existing.closes_at ? new Date(existing.closes_at).toISOString() : null) === (dates.closesAt?.toISOString() ?? null);
+          && (existing.closes_at ? new Date(existing.closes_at).toISOString() : null) === (dates.closesAt?.toISOString() ?? null)
+          && existing.score_release_policy === scoreReleasePolicy && existing.solution_release_policy === solutionReleasePolicy;
         if (sameDates) return existing;
         throw new ApiError(409, 'already_published', 'La práctica ya fue publicada con otra versión o disponibilidad.');
       }
@@ -338,11 +343,14 @@ export function registerAssessmentRoutes(app: FastifyInstance, db: Knex, teacher
       const settings = { title: assessment.title, instructions: assessment.instructions, type: assessment.type };
       const contentHash = digest({ assessmentId: assessment.id, sourceVersion: assessment.version, settings,
         opensAt: dates.opensAt?.toISOString() ?? null, dueAt: dates.dueAt?.toISOString() ?? null, closesAt: dates.closesAt?.toISOString() ?? null,
+        scoreReleasePolicy, solutionReleasePolicy,
         items: items.map(item => ({ questionRevisionId: item.question_revision_id, contentHash: item.content_hash, position: item.position, points: Number(item.points) })) });
       const last = await tx('assessment_versions').where({ assessment_id: assessment.id }).max<{ max: string | number | null }>('revision as max').first();
       const [created] = await tx('assessment_versions').insert({ id: randomUUID(), assessment_id: assessment.id, classroom_id: request.params.id,
         revision: Number(last?.max || 0) + 1, source_version: assessment.version, settings: JSON.stringify(settings), total_points: totalPoints,
-        content_hash: contentHash, opens_at: dates.opensAt, due_at: dates.dueAt, closes_at: dates.closesAt, published_by: user.id, published_at: tx.fn.now() }).returning('*');
+        content_hash: contentHash, opens_at: dates.opensAt, due_at: dates.dueAt, closes_at: dates.closesAt,
+        score_release_policy: scoreReleasePolicy, solution_release_policy: solutionReleasePolicy,
+        published_by: user.id, published_at: tx.fn.now() }).returning('*');
       await tx('assessment_version_items').insert(items.map(item => ({ id: randomUUID(), assessment_version_id: created.id, classroom_id: request.params.id,
         question_revision_id: item.question_revision_id, position: item.position, points: item.points, settings: '{}' })));
       await tx('assessments').where({ id: assessment.id }).update({ status: 'published', version: assessment.version + 1, updated_at: tx.fn.now() });
