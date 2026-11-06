@@ -57,6 +57,8 @@ type AssessmentVersion = {
   opensAt: string | null;
   dueAt: string | null;
   closesAt: string | null;
+  scoreReleasePolicy: 'immediate' | 'after_close';
+  solutionReleasePolicy: 'never' | 'after_close';
   publishedAt: string;
   items: AssessmentItem[];
 };
@@ -82,6 +84,7 @@ function ClassroomTabs({ classroomId, active }: { classroomId: string; active: '
     <Link to={`/docente/cursos/${classroomId}`}>Estudiantes</Link>
     <Link to={`/docente/cursos/${classroomId}/planificacion`}>Planificación</Link>
     <Link className={active === 'assessments' ? 'active' : ''} aria-current="page" to={classroomPath(classroomId)}>Evaluaciones</Link>
+    <Link to={`/docente/cursos/${classroomId}/resultados`}>Resultados</Link>
   </nav>;
 }
 
@@ -231,12 +234,15 @@ export function TeacherAssessmentPreview() {
   const [opensAt, setOpensAt] = useState('');
   const [dueAt, setDueAt] = useState('');
   const [closesAt, setClosesAt] = useState('');
+  const scoreReleasePolicy = 'after_close' as const;
+  const solutionReleasePolicy = 'never' as const;
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (user?.role !== 'docente') return; let active = true; Promise.all([api<RealClassroomData>(`/classrooms/${id}`), api<Assessment>(`/classrooms/${id}/assessments/${assessmentId}/preview`)]).then(([nextCourse, nextAssessment]) => { if (active) { setCourse(nextCourse); setAssessment(nextAssessment); setError(''); } }).catch(reason => { if (active) setError((reason as Error).message); }); return () => { active = false; }; }, [assessmentId, id, revision, user?.role]);
   function publicationPayload() {
     return { version: assessment!.version, confirmed: true, opensAt: opensAt ? new Date(opensAt).toISOString() : null,
-      dueAt: dueAt ? new Date(dueAt).toISOString() : null, closesAt: closesAt ? new Date(closesAt).toISOString() : null };
+      dueAt: dueAt ? new Date(dueAt).toISOString() : null, closesAt: closesAt ? new Date(closesAt).toISOString() : null,
+      scoreReleasePolicy, solutionReleasePolicy };
   }
   function validateAvailability() {
     const values = [opensAt, dueAt, closesAt].filter(Boolean).map(value => new Date(value));
